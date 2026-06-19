@@ -51,6 +51,13 @@ class DocStore {
     if (res) this.#apply(res, true);
   }
 
+  /** Discards in-memory edits by reloading the document from its file on disk.
+   *  No-op for an unsaved (pathless) document. */
+  async revert() {
+    if (!this.path) return;
+    await this.open(this.path);
+  }
+
   async save() {
     const res = await this.#run(() => api.save());
     if (res) this.#apply(res, false);

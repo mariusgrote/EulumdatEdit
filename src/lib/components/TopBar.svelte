@@ -1,6 +1,6 @@
 <script lang="ts">
   import { store } from '$lib/store.svelte';
-  import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
+  import { open as openDialog, save as saveDialog, ask } from '@tauri-apps/plugin-dialog';
 
   interface Props {
     showValidation: boolean;
@@ -31,6 +31,14 @@
     if (path) await store.saveAs(path);
   }
 
+  async function doDiscard() {
+    const ok = await ask(
+      'Discard all unsaved changes and reload this file from disk? This cannot be undone.',
+      { title: 'Discard changes', kind: 'warning' }
+    );
+    if (ok) await store.revert();
+  }
+
   const fileName = $derived(
     store.path ? store.path.split('/').pop() : store.doc ? 'Untitled' : '—'
   );
@@ -53,6 +61,11 @@
     <button class="btn ghost" onclick={doOpen}>Open</button>
     <button class="btn" onclick={doSave} disabled={!store.doc}>Save</button>
     <button class="btn ghost" onclick={doSaveAs} disabled={!store.doc}>Save As</button>
+    {#if store.dirty && store.path}
+      <button class="btn ghost" onclick={doDiscard} title="Discard changes and reload from disk">
+        Discard
+      </button>
+    {/if}
 
     <button
       class="btn ghost badge-btn"
