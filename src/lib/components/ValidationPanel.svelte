@@ -8,47 +8,85 @@
 
 <div class="vpanel">
   <div class="vhead">
-    <h3>Validation</h3>
-    <button class="btn ghost" onclick={onclose}>✕</button>
+    <h3>
+      Validation
+      {#if store.warnings.length > 0}<span class="count">{store.warnings.length}</span>{/if}
+    </h3>
+    <button class="btn ghost icon" onclick={onclose} title="Back to diagram" aria-label="Back to diagram">
+      ✕
+    </button>
   </div>
-  {#if store.warnings.length === 0}
-    <p class="ok">✓ No validation warnings.</p>
-  {:else}
-    <ul>
-      {#each store.warnings as w}
-        <li>
-          <span class="wfield">{w.field}</span>
-          <span class="wmsg">{w.message}</span>
-        </li>
-      {/each}
-    </ul>
-  {/if}
+
+  <div class="vbody">
+    {#if store.warnings.length === 0}
+      <div class="ok">
+        <span class="ok-mark">✓</span>
+        <span>No validation warnings.</span>
+      </div>
+    {:else}
+      <ul>
+        {#each store.warnings as w}
+          <li>
+            <span class="wfield">{w.field}</span>
+            <span class="wmsg">{w.message}</span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </div>
 </div>
 
 <style>
   .vpanel {
-    background: var(--bg-elev);
-    border-left: 1px solid var(--border);
     height: 100%;
-    overflow-y: auto;
-    padding: 16px;
-    width: 320px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
   .vhead {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 14px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
   }
   .vhead h3 {
-    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    color: var(--text-faint);
+    font-weight: 600;
+  }
+  .count {
+    font-variant-numeric: tabular-nums;
+    background: var(--warn);
+    color: #1a1205;
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-size: 11px;
+    letter-spacing: 0;
+  }
+  .icon {
+    padding: 4px 8px;
+  }
+  .vbody {
+    overflow-y: auto;
+    padding: 14px 16px;
+    min-height: 0;
   }
   .ok {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     color: var(--text-dim);
     font-size: 13px;
+  }
+  .ok-mark {
+    color: #2e9e5b;
+    font-weight: 700;
   }
   ul {
     list-style: none;
@@ -56,13 +94,14 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
   }
   li {
+    border: 1px solid var(--border);
     border-left: 3px solid var(--warn);
-    background: var(--bg-sunken);
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-    padding: 8px 12px;
+    background: var(--bg-elev);
+    border-radius: var(--radius-sm);
+    padding: 9px 12px;
     display: flex;
     flex-direction: column;
     gap: 3px;

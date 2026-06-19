@@ -10,15 +10,27 @@
   import SectionIntensity from '$lib/components/SectionIntensity.svelte';
 
   const sections = [
-    { id: 'general', label: 'General', icon: '◷' },
-    { id: 'geometry', label: 'Geometry', icon: '▦' },
-    { id: 'lamps', label: 'Lamps', icon: '◍' },
-    { id: 'intensity', label: 'Intensity', icon: '⊹' }
+    {
+      id: 'general',
+      label: 'General',
+      icon: 'M5 5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2zM14 3v5h5M8 13h8M8 17h6'
+    },
+    {
+      id: 'geometry',
+      label: 'Geometry',
+      icon: 'M12 3l8 4.5v9L12 21l-8-4.5v-9zM4 7.5l8 4.5 8-4.5M12 12v9'
+    },
+    {
+      id: 'lamps',
+      label: 'Lamps',
+      icon: 'M9.5 18h5M10.5 21h3M12 3a6 6 0 0 0-3.5 10.9c.6.5.9 1.1 1 2.1h5c.1-1 .4-1.6 1-2.1A6 6 0 0 0 12 3z'
+    },
+    { id: 'intensity', label: 'Intensity', icon: 'M4 4v16h16M8 15l3-4 3 3 4-6' }
   ] as const;
 
   type SectionId = (typeof sections)[number]['id'];
   let active = $state<SectionId>('general');
-  let warningsOpen = $state(false);
+  let rightView = $state<'diagram' | 'validation'>('diagram');
 
   async function openFile() {
     const path = await openDialog({
@@ -48,7 +60,11 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="app">
-  <TopBar {warningsOpen} toggleWarnings={() => (warningsOpen = !warningsOpen)} />
+  <TopBar
+    showValidation={rightView === 'validation'}
+    toggleValidation={() =>
+      (rightView = rightView === 'validation' ? 'diagram' : 'validation')}
+  />
 
   <div class="body">
     <nav class="sidebar">
@@ -59,7 +75,9 @@
           onclick={() => (active = s.id)}
           disabled={!store.doc}
         >
-          <span class="ico">{s.icon}</span>
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+            <path d={s.icon} />
+          </svg>
           <span>{s.label}</span>
         </button>
       {/each}
@@ -88,11 +106,13 @@
     </main>
 
     {#if store.doc}
-      <DiagramPanel />
-    {/if}
-
-    {#if warningsOpen && store.doc}
-      <ValidationPanel onclose={() => (warningsOpen = false)} />
+      <aside class="inspector">
+        {#if rightView === 'validation'}
+          <ValidationPanel onclose={() => (rightView = 'diagram')} />
+        {:else}
+          <DiagramPanel />
+        {/if}
+      </aside>
     {/if}
   </div>
 </div>
@@ -106,18 +126,19 @@
   .body {
     flex: 1;
     display: grid;
-    grid-template-columns: 168px minmax(0, 1fr) 520px auto;
+    grid-template-columns: 200px minmax(0, 1fr) clamp(380px, 34vw, 520px);
     min-height: 0;
   }
   .sidebar {
     background: var(--bg-elev);
     border-right: 1px solid var(--border);
-    padding: 14px 10px;
+    padding: 12px 10px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
   }
   .navitem {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -125,39 +146,66 @@
     border: none;
     background: transparent;
     color: var(--text-dim);
-    padding: 9px 12px;
+    padding: 8px 11px;
     border-radius: var(--radius-sm);
     font-weight: 500;
     text-align: left;
   }
   .navitem:hover:not(:disabled) {
-    background: var(--bg-sunken);
+    background: var(--sel);
     color: var(--text);
   }
   .navitem.active {
+    background: var(--sel);
+    color: var(--text);
+  }
+  /* amber leading indicator on the selected item */
+  .navitem.active::before {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 16px;
+    border-radius: 2px;
     background: var(--accent);
-    color: var(--accent-contrast);
   }
   .navitem:disabled {
     opacity: 0.4;
     cursor: not-allowed;
   }
   .ico {
-    font-size: 16px;
     width: 18px;
-    text-align: center;
+    height: 18px;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .navitem.active .ico {
+    color: var(--accent-strong);
   }
   .content {
     overflow-y: auto;
-    padding: 22px;
+    padding: 24px 28px;
     min-width: 0;
   }
   .sections {
     display: flex;
     flex-direction: column;
-    gap: 18px;
-    max-width: 760px;
-    margin: 0 auto;
+    gap: 16px;
+    max-width: 720px;
+  }
+  .inspector {
+    background: var(--bg-elev);
+    border-left: 1px solid var(--border);
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
   .welcome {
     height: 100%;

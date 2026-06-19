@@ -3,10 +3,10 @@
   import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 
   interface Props {
-    warningsOpen: boolean;
-    toggleWarnings: () => void;
+    showValidation: boolean;
+    toggleValidation: () => void;
   }
-  let { warningsOpen, toggleWarnings }: Props = $props();
+  let { showValidation, toggleValidation }: Props = $props();
 
   const filter = [{ name: 'EULUMDAT', extensions: ['ldt', 'LDT'] }];
 
@@ -57,12 +57,15 @@
     <button
       class="btn ghost badge-btn"
       class:has={warnCount > 0}
-      class:active={warningsOpen}
-      onclick={toggleWarnings}
+      class:active={showValidation}
+      onclick={toggleValidation}
       disabled={!store.doc}
-      title="Validation warnings"
+      title={showValidation ? 'Show diagram' : 'Show validation warnings'}
     >
-      ⚠ {warnCount}
+      <svg class="warn-ico" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 4 2.5 20.5h19zM12 10v4M12 17.5v.01" />
+      </svg>
+      {warnCount}
     </button>
   </div>
 </header>
@@ -111,11 +114,26 @@
     display: flex;
     gap: 6px;
   }
+  .badge-btn {
+    gap: 5px;
+    font-variant-numeric: tabular-nums;
+  }
+  .warn-ico {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
   .badge-btn.has {
     color: var(--warn);
     border-color: var(--warn);
   }
   .badge-btn.active {
-    background: var(--bg-sunken);
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent-strong);
   }
 </style>
