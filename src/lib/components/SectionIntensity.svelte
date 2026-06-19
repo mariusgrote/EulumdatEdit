@@ -6,7 +6,7 @@
   const rows = $derived(doc.intensities.length);
   const cols = $derived(doc.gammaAngles.length);
 
-  let resampleStep = $state(10);
+  let resampleStep = $state(1);
 
   function planeLabel(i: number): string {
     const angle = doc.cPlanes[i];
