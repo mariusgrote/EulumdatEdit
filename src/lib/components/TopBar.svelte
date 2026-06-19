@@ -10,7 +10,13 @@
 
   const filter = [{ name: 'EULUMDAT', extensions: ['ldt', 'LDT'] }];
 
+  async function doNew() {
+    if (!(await store.confirmDiscardChanges())) return;
+    await store.newDoc();
+  }
+
   async function doOpen() {
+    if (!(await store.confirmDiscardChanges())) return;
     const path = await openDialog({ multiple: false, filters: filter });
     if (typeof path === 'string') await store.open(path);
   }
@@ -57,7 +63,7 @@
   </div>
 
   <div class="actions">
-    <button class="btn ghost" onclick={() => store.newDoc()}>New</button>
+    <button class="btn ghost" onclick={doNew}>New</button>
     <button class="btn ghost" onclick={doOpen}>Open</button>
     <button class="btn" onclick={doSave} disabled={!store.doc}>Save</button>
     <button class="btn ghost" onclick={doSaveAs} disabled={!store.doc}>Save As</button>

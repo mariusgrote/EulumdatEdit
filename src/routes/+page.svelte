@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { store } from '$lib/store.svelte';
   import { open as openDialog } from '@tauri-apps/plugin-dialog';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import TopBar from '$lib/components/TopBar.svelte';
   import DiagramPanel from '$lib/components/DiagramPanel.svelte';
   import ValidationPanel from '$lib/components/ValidationPanel.svelte';
@@ -33,12 +35,30 @@
   let rightView = $state<'diagram' | 'validation'>('diagram');
 
   async function openFile() {
+    if (!(await store.confirmDiscardChanges())) return;
     const path = await openDialog({
       multiple: false,
       filters: [{ name: 'EULUMDAT', extensions: ['ldt', 'LDT'] }]
     });
     if (typeof path === 'string') await store.open(path);
   }
+
+  async function newDoc() {
+    if (!(await store.confirmDiscardChanges())) return;
+    await store.newDoc();
+  }
+
+  // Guard the window close button against discarding unsaved changes.
+  onMount(() => {
+    const appWindow = getCurrentWindow();
+    const unlisten = appWindow.onCloseRequested(async (event) => {
+      if (await store.confirmDiscardChanges()) return;
+      event.preventDefault();
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  });
 
   function onKey(e: KeyboardEvent) {
     const mod = e.metaKey || e.ctrlKey;
@@ -52,7 +72,7 @@
       openFile();
     } else if (k === 'n') {
       e.preventDefault();
-      store.newDoc();
+      newDoc();
     }
   }
 </script>
@@ -90,7 +110,7 @@
           <h1>EulumdatEdit</h1>
           <p>Open a EULUMDAT <code>.ldt</code> file or start a new luminaire.</p>
           <div class="welcome-actions">
-            <button class="btn primary" onclick={() => store.newDoc()}>New luminaire</button>
+            <button class="btn primary" onclick={newDoc}>New luminaire</button>
           </div>
           {#if store.error}<p class="err">{store.error}</p>{/if}
         </div>

@@ -1,6 +1,7 @@
 // Central document store. The Rust backend is the source of truth; this store
 // holds the editable copy plus derived warnings/photometry returned by Rust.
 
+import { ask } from '@tauri-apps/plugin-dialog';
 import * as api from './api';
 import type { DocResponse, EulumdatDoc, Photometry, Warning } from './types';
 
@@ -39,6 +40,17 @@ class DocStore {
     } finally {
       this.busy = false;
     }
+  }
+
+  /** Guards actions that would discard in-progress edits (New, Open, close).
+   *  Returns true when it is safe to proceed: either the document is clean or
+   *  the user confirmed discarding their unsaved changes. */
+  async confirmDiscardChanges(): Promise<boolean> {
+    if (!this.dirty) return true;
+    return ask('You have unsaved changes that will be lost. Continue?', {
+      title: 'Unsaved changes',
+      kind: 'warning'
+    });
   }
 
   async newDoc() {
