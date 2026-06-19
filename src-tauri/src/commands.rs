@@ -76,7 +76,10 @@ pub fn take_pending_open(state: State<'_, AppState>) -> Option<String> {
 ///
 /// This is called after each edit; it rebuilds, validates, and recomputes.
 #[tauri::command]
-pub fn update_document(doc: EulumdatDto, state: State<'_, AppState>) -> Result<DocResponse, String> {
+pub fn update_document(
+    doc: EulumdatDto,
+    state: State<'_, AppState>,
+) -> Result<DocResponse, String> {
     let model = doc.to_model().map_err(|e| e.to_string())?;
     let mut state_doc = state.doc.lock().unwrap();
     state_doc.model = Some(model.clone());
