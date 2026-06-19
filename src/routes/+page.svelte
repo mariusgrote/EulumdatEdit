@@ -41,6 +41,9 @@
   let wasNarrow = false;
   const PANEL_MIN_WIDTH = 900;
 
+  // Highlighted while a file is dragged over the window.
+  let dragOver = $state(false);
+
   $effect(() => {
     const n = narrow;
     // Edge-triggered: auto-collapse on entering narrow, auto-expand on leaving,
@@ -73,6 +76,13 @@
     await store.newDoc();
   }
 
+  // Opens a known path (drag-and-drop, file association) behind the same
+  // unsaved-changes guard the Open button uses.
+  async function openPath(path: string) {
+    if (!(await store.confirmDiscardChanges())) return;
+    await store.open(path);
+  }
+
   // Guard the window close button against discarding unsaved changes, and track
   // window width to auto-hide the inspector on narrow windows.
   onMount(() => {
@@ -86,11 +96,28 @@
     updateNarrow();
     window.addEventListener('resize', updateNarrow);
 
+    // Accept .ldt files dropped onto the window.
+    const unlistenDrop = appWindow.onDragDropEvent((event) => {
+      const p = event.payload;
+      if (p.type === 'enter') {
+        dragOver = p.paths.some(isLdt);
+      } else if (p.type === 'leave') {
+        dragOver = false;
+      } else if (p.type === 'drop') {
+        dragOver = false;
+        const file = p.paths.find(isLdt);
+        if (file) openPath(file);
+      }
+    });
+
     return () => {
       unlisten.then((fn) => fn());
+      unlistenDrop.then((fn) => fn());
       window.removeEventListener('resize', updateNarrow);
     };
   });
+
+  const isLdt = (p: string) => p.toLowerCase().endsWith('.ldt');
 
   function onKey(e: KeyboardEvent) {
     const mod = e.metaKey || e.ctrlKey;
@@ -168,6 +195,15 @@
       </aside>
     {/if}
   </div>
+
+  {#if dragOver}
+    <div class="dropzone">
+      <div class="dropzone-card">
+        <div class="logo">◐</div>
+        <p>Drop to open <code>.ldt</code> file</p>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -291,5 +327,37 @@
   }
   .err {
     color: var(--danger);
+  }
+  .dropzone {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--bg-sunken) 75%, transparent);
+    backdrop-filter: blur(2px);
+    pointer-events: none;
+  }
+  .dropzone-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 32px 48px;
+    border: 2px dashed var(--accent);
+    border-radius: var(--radius);
+    background: var(--bg-elev);
+    color: var(--text-dim);
+  }
+  .dropzone-card .logo {
+    font-size: 48px;
+    color: var(--accent);
+  }
+  .dropzone code {
+    font-family: var(--mono);
+    background: var(--bg-sunken);
+    padding: 1px 6px;
+    border-radius: 4px;
   }
 </style>
