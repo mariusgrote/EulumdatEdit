@@ -20,8 +20,6 @@ jobs:
 
       - name: Set up build environment
         uses: ./.github/actions/setup
-        with:
-          eulumdat-core-token: ${{ secrets.EULUMDAT_CORE_TOKEN }}
 
       - name: Run SvelteKit check
         run: pnpm check

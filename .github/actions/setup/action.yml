@@ -7,8 +7,9 @@ inputs:
     required: false
     default: mariusgrote/eulumdat-core
   eulumdat-core-token:
-    description: Token with read access to the private eulumdat-core repository
-    required: true
+    description: Optional token for private eulumdat-core access (defaults to GITHUB_TOKEN)
+    required: false
+    default: ''
   rust-targets:
     description: Optional comma-separated Rust targets to install
     required: false
@@ -22,7 +23,7 @@ runs:
       with:
         repository: ${{ inputs.eulumdat-core-repo }}
         path: eulumdat-core
-        token: ${{ inputs.eulumdat-core-token }}
+        token: ${{ inputs.eulumdat-core-token || github.token }}
 
     - name: Link eulumdat-core for Cargo path dependency
       if: runner.os != 'Windows'

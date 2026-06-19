@@ -34,7 +34,6 @@ jobs:
       - name: Set up build environment
         uses: ./.github/actions/setup
         with:
-          eulumdat-core-token: ${{ secrets.EULUMDAT_CORE_TOKEN }}
           rust-targets: ${{ matrix.rust-targets }}
 
       - name: Build Tauri app
