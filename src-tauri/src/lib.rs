@@ -4,8 +4,10 @@ mod commands;
 mod dto;
 mod state;
 
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
 use std::sync::atomic::Ordering;
 
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
 use tauri::{Emitter, Manager};
 
 use state::AppState;
@@ -31,19 +33,19 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
-        .run(|app, event| {
+        .run(|_app, _event| {
             // macOS/iOS/Android deliver file-association / "Open with" requests here.
             #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
-            if let tauri::RunEvent::Opened { urls } = event {
+            if let tauri::RunEvent::Opened { urls } = _event {
                 if let Some(path) = urls
                     .iter()
                     .filter_map(|u| u.to_file_path().ok())
                     .find(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("ldt")))
                 {
                     let path = path.to_string_lossy().into_owned();
-                    let state = app.state::<AppState>();
+                    let state = _app.state::<AppState>();
                     if state.frontend_ready.load(Ordering::SeqCst) {
-                        let _ = app.emit("open-file", &path);
+                        let _ = _app.emit("open-file", &path);
                     } else {
                         *state.pending_open.lock().unwrap() = Some(path);
                     }
