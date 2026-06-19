@@ -1,12 +1,13 @@
 <script lang="ts">
   import { store } from '$lib/store.svelte';
+  import { ask } from '@tauri-apps/plugin-dialog';
 
   const doc = $derived(store.doc!);
   // intensities[cPlaneRow][gammaIndex]
   const rows = $derived(doc.intensities.length);
   const cols = $derived(doc.gammaAngles.length);
 
-  let resampleStep = $state(10);
+  let resampleStep = $state(1);
 
   function planeLabel(i: number): string {
     const angle = doc.cPlanes[i];
@@ -18,6 +19,23 @@
     doc.intensities[c][g] = Number.isFinite(v) ? v : 0;
     store.edited();
   }
+
+  async function doScaleTo100() {
+    const ok = await ask(
+      'This rescales every intensity value so the peak reaches 100%. The original values cannot be recovered. Continue?',
+      { title: 'Scale to 100%', kind: 'warning' }
+    );
+    if (ok) await store.scaleTo100();
+  }
+
+  async function doResample() {
+    const ok = await ask(
+      `This rebuilds the gamma table at a ${resampleStep}° step by interpolation. ` +
+        'The current gamma angles and their values will be replaced. Continue?',
+      { title: 'Resample γ', kind: 'warning' }
+    );
+    if (ok) await store.resampleGamma(resampleStep);
+  }
 </script>
 
 <div class="card">
@@ -25,7 +43,7 @@
     <h3 style="margin:0">Luminous intensity table</h3>
     <div class="tools">
       <span class="dims">{rows} × {cols} (cd/klm)</span>
-      <button class="btn ghost" onclick={() => store.scaleTo100()}>Scale to 100%</button>
+      <button class="btn ghost" onclick={doScaleTo100}>Scale to 100%</button>
       <div class="resample">
         <input
           type="number"
@@ -34,7 +52,7 @@
           bind:value={resampleStep}
           aria-label="Gamma step"
         />
-        <button class="btn" onclick={() => store.resampleGamma(resampleStep)}>
+        <button class="btn" onclick={doResample}>
           Resample γ
         </button>
       </div>
