@@ -59,7 +59,21 @@
 
   <div class="file">
     <span class="filename">{fileName}</span>
-    {#if store.dirty}<span class="dot" title="Unsaved changes">●</span>{/if}
+    {#if store.dirty}
+      <span class="dot" title="Unsaved changes">●</span>
+      {#if store.path}
+        <button
+          class="revert"
+          onclick={doDiscard}
+          title="Discard changes and reload from disk"
+          aria-label="Discard changes and reload from disk"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 12a9 9 0 1 0 3-6.7M3 4v4h4" />
+          </svg>
+        </button>
+      {/if}
+    {/if}
   </div>
 
   <div class="actions">
@@ -67,11 +81,6 @@
     <button class="btn ghost" onclick={doOpen}>Open</button>
     <button class="btn" onclick={doSave} disabled={!store.doc}>Save</button>
     <button class="btn ghost" onclick={doSaveAs} disabled={!store.doc}>Save As</button>
-    {#if store.dirty && store.path}
-      <button class="btn ghost" onclick={doDiscard} title="Discard changes and reload from disk">
-        Discard
-      </button>
-    {/if}
 
     <button
       class="btn ghost badge-btn"
@@ -128,6 +137,30 @@
   .dot {
     color: var(--accent);
     font-size: 10px;
+  }
+  .revert {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    border: none;
+    background: transparent;
+    color: var(--text-faint);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .revert:hover {
+    background: var(--sel);
+    color: var(--text);
+  }
+  .revert svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   .actions {
     margin-left: auto;
