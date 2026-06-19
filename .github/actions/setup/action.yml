@@ -1,0 +1,48 @@
+name: Setup build environment
+description: Install dependencies and check out the eulumdat-core sibling crate
+
+inputs:
+  eulumdat-core-repo:
+    description: GitHub repository for the eulumdat-core dependency
+    required: false
+    default: mariusgrote/eulumdat-core
+  rust-targets:
+    description: Optional comma-separated Rust targets to install
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Check out eulumdat-core
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.eulumdat-core-repo }}
+        path: ../eulumdat-core
+        token: ${{ github.token }}
+
+    - name: Install pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 10
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: lts/*
+        cache: pnpm
+
+    - name: Install frontend dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
+
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+        targets: ${{ inputs.rust-targets }}
+
+    - name: Cache Rust build artifacts
+      uses: swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri -> target
