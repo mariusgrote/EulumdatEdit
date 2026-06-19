@@ -15,11 +15,11 @@ runs:
   using: composite
   steps:
     - name: Check out eulumdat-core
-      uses: actions/checkout@v4
-      with:
-        repository: ${{ inputs.eulumdat-core-repo }}
-        path: ../eulumdat-core
-        token: ${{ github.token }}
+      shell: bash
+      run: |
+        git clone --depth 1 \
+          "https://x-access-token:${{ github.token }}@github.com/${{ inputs.eulumdat-core-repo }}.git" \
+          "${GITHUB_WORKSPACE}/../eulumdat-core"
 
     - name: Install pnpm
       uses: pnpm/action-setup@v4
