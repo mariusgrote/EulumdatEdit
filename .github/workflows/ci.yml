@@ -35,3 +35,42 @@ jobs:
       - name: Verify Rust build
         working-directory: src-tauri
         run: cargo check --all-targets
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin
+            artifact-name: macos-universal
+          - platform: windows-latest
+            rust-targets: ''
+            args: ''
+            artifact-name: windows-x64
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup
+        with:
+          rust-targets: ${{ matrix.rust-targets }}
+
+      - name: Build Tauri app
+        run: pnpm tauri build ${{ matrix.args }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: |
+            src-tauri/target/**/bundle/dmg/*.dmg
+            src-tauri/target/**/bundle/nsis/*-setup.exe
+            src-tauri/target/**/bundle/msi/*.msi
+          if-no-files-found: error

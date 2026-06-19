@@ -45,7 +45,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact-name }}
-          path: src-tauri/target/**/bundle/**/*
+          path: |
+            src-tauri/target/**/bundle/dmg/*.dmg
+            src-tauri/target/**/bundle/nsis/*-setup.exe
+            src-tauri/target/**/bundle/msi/*.msi
           if-no-files-found: error
 
   release:
@@ -62,4 +65,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: artifacts/**/*
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*-setup.exe
+            artifacts/**/*.msi
