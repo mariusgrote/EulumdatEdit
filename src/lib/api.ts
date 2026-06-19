@@ -38,3 +38,7 @@ export function setStrictValidation(enabled: boolean): Promise<DocResponse> {
 export function renderPolarSvg(options: PolarOptions): Promise<string> {
   return invoke('render_polar_svg', { options });
 }
+
+export function writeBytes(path: string, contents: Uint8Array): Promise<void> {
+  return invoke('write_bytes', { path: path, contents: Array.from(contents) });
+}

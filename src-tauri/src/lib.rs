@@ -22,6 +22,7 @@ pub fn run() {
             commands::scale_to_100_percent,
             commands::set_strict_validation,
             commands::render_polar_svg,
+            commands::write_bytes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

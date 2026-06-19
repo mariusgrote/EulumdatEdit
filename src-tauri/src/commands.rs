@@ -222,6 +222,13 @@ pub fn render_polar_svg(
     model.to_polar_svg(&opts).map_err(|e| e.to_string())
 }
 
+/// Writes raw bytes to a path on disk. Used by the UI to save exported graphs
+/// (SVG markup or rasterized PNG) to a user-chosen location.
+#[tauri::command]
+pub fn write_bytes(path: String, contents: Vec<u8>) -> Result<(), String> {
+    std::fs::write(&path, contents).map_err(|e| e.to_string())
+}
+
 /// A minimal valid luminaire used for "New".
 fn template_model() -> Eulumdat {
     use eulumdat_core::{Distribution, LampSet};

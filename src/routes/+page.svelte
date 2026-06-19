@@ -4,7 +4,7 @@
   import { open as openDialog } from '@tauri-apps/plugin-dialog';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import TopBar from '$lib/components/TopBar.svelte';
-  import DiagramPanel from '$lib/components/DiagramPanel.svelte';
+  import VisualizationPanel from '$lib/components/VisualizationPanel.svelte';
   import ValidationPanel from '$lib/components/ValidationPanel.svelte';
   import SectionGeneral from '$lib/components/SectionGeneral.svelte';
   import SectionGeometry from '$lib/components/SectionGeometry.svelte';
@@ -34,6 +34,31 @@
   let active = $state<SectionId>('general');
   let rightView = $state<'diagram' | 'validation'>('diagram');
 
+  // Inspector (right column) visibility. The user can collapse it; it also
+  // auto-collapses on narrow windows and restores when room returns.
+  let collapsed = $state(false);
+  let narrow = $state(false);
+  let wasNarrow = false;
+  const PANEL_MIN_WIDTH = 900;
+
+  $effect(() => {
+    const n = narrow;
+    // Edge-triggered: auto-collapse on entering narrow, auto-expand on leaving,
+    // while leaving the user free to toggle manually in between.
+    if (n && !wasNarrow) collapsed = true;
+    else if (!n && wasNarrow) collapsed = false;
+    wasNarrow = n;
+  });
+
+  function toggleValidation() {
+    if (rightView === 'validation') {
+      rightView = 'diagram';
+    } else {
+      rightView = 'validation';
+      collapsed = false; // bring the panel back if it was hidden
+    }
+  }
+
   async function openFile() {
     if (!(await store.confirmDiscardChanges())) return;
     const path = await openDialog({
@@ -48,15 +73,22 @@
     await store.newDoc();
   }
 
-  // Guard the window close button against discarding unsaved changes.
+  // Guard the window close button against discarding unsaved changes, and track
+  // window width to auto-hide the inspector on narrow windows.
   onMount(() => {
     const appWindow = getCurrentWindow();
     const unlisten = appWindow.onCloseRequested(async (event) => {
       if (await store.confirmDiscardChanges()) return;
       event.preventDefault();
     });
+
+    const updateNarrow = () => (narrow = window.innerWidth < PANEL_MIN_WIDTH);
+    updateNarrow();
+    window.addEventListener('resize', updateNarrow);
+
     return () => {
       unlisten.then((fn) => fn());
+      window.removeEventListener('resize', updateNarrow);
     };
   });
 
@@ -82,11 +114,12 @@
 <div class="app">
   <TopBar
     showValidation={rightView === 'validation'}
-    toggleValidation={() =>
-      (rightView = rightView === 'validation' ? 'diagram' : 'validation')}
+    {toggleValidation}
+    panelCollapsed={collapsed}
+    togglePanel={() => (collapsed = !collapsed)}
   />
 
-  <div class="body">
+  <div class="body" class:no-inspector={collapsed || !store.doc}>
     <nav class="sidebar">
       {#each sections as s}
         <button
@@ -125,12 +158,12 @@
       {/if}
     </main>
 
-    {#if store.doc}
+    {#if store.doc && !collapsed}
       <aside class="inspector">
         {#if rightView === 'validation'}
           <ValidationPanel onclose={() => (rightView = 'diagram')} />
         {:else}
-          <DiagramPanel />
+          <VisualizationPanel />
         {/if}
       </aside>
     {/if}
@@ -148,6 +181,9 @@
     display: grid;
     grid-template-columns: 200px minmax(0, 1fr) clamp(380px, 34vw, 520px);
     min-height: 0;
+  }
+  .body.no-inspector {
+    grid-template-columns: 200px minmax(0, 1fr);
   }
   .sidebar {
     background: var(--bg-elev);

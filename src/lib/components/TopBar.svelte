@@ -5,8 +5,10 @@
   interface Props {
     showValidation: boolean;
     toggleValidation: () => void;
+    panelCollapsed: boolean;
+    togglePanel: () => void;
   }
-  let { showValidation, toggleValidation }: Props = $props();
+  let { showValidation, toggleValidation, panelCollapsed, togglePanel }: Props = $props();
 
   const filter = [{ name: 'EULUMDAT', extensions: ['ldt', 'LDT'] }];
 
@@ -94,6 +96,19 @@
         <path d="M12 4 2.5 20.5h19zM12 10v4M12 17.5v.01" />
       </svg>
       {warnCount}
+    </button>
+
+    <button
+      class="btn ghost panel-btn"
+      class:active={!panelCollapsed}
+      onclick={togglePanel}
+      disabled={!store.doc}
+      title={panelCollapsed ? 'Show side panel' : 'Hide side panel'}
+      aria-label={panelCollapsed ? 'Show side panel' : 'Hide side panel'}
+    >
+      <svg class="panel-ico" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 5h16v14H4zM15 5v14" />
+      </svg>
     </button>
   </div>
 </header>
@@ -188,5 +203,20 @@
     background: var(--accent-soft);
     border-color: var(--accent);
     color: var(--accent-strong);
+  }
+  .panel-btn {
+    padding: 0 8px;
+  }
+  .panel-ico {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .panel-btn.active {
+    color: var(--text);
   }
 </style>
