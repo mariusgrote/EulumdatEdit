@@ -4,6 +4,10 @@ mod commands;
 mod dto;
 mod state;
 
+use std::sync::atomic::Ordering;
+
+use tauri::{Emitter, Manager};
+
 use state::AppState;
 
 /// Builds and runs the Tauri application.
@@ -15,6 +19,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::new_from_template,
             commands::open_file,
+            commands::take_pending_open,
             commands::update_document,
             commands::save,
             commands::save_as,
@@ -24,6 +29,24 @@ pub fn run() {
             commands::render_polar_svg,
             commands::write_bytes,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app, event| {
+            // macOS delivers file-association / "Open with" requests here.
+            if let tauri::RunEvent::Opened { urls } = event {
+                if let Some(path) = urls
+                    .iter()
+                    .filter_map(|u| u.to_file_path().ok())
+                    .find(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("ldt")))
+                {
+                    let path = path.to_string_lossy().into_owned();
+                    let state = app.state::<AppState>();
+                    if state.frontend_ready.load(Ordering::SeqCst) {
+                        let _ = app.emit("open-file", &path);
+                    } else {
+                        *state.pending_open.lock().unwrap() = Some(path);
+                    }
+                }
+            }
+        });
 }

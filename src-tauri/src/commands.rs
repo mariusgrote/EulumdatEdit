@@ -62,6 +62,16 @@ pub fn open_file(path: String, state: State<'_, AppState>) -> Result<DocResponse
     respond(&model, Some(path), false, doc.strict_validation)
 }
 
+/// Returns and clears any file the OS queued for opening before the UI was
+/// ready (e.g. launching the app by double-clicking a `.ldt` file).
+#[tauri::command]
+pub fn take_pending_open(state: State<'_, AppState>) -> Option<String> {
+    state
+        .frontend_ready
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    state.pending_open.lock().unwrap().take()
+}
+
 /// Replaces the in-memory model with an edited DTO from the UI.
 ///
 /// This is called after each edit; it rebuilds, validates, and recomputes.

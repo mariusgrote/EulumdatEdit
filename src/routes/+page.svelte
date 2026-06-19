@@ -3,6 +3,8 @@
   import { store } from '$lib/store.svelte';
   import { open as openDialog } from '@tauri-apps/plugin-dialog';
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { listen } from '@tauri-apps/api/event';
+  import * as api from '$lib/api';
   import TopBar from '$lib/components/TopBar.svelte';
   import VisualizationPanel from '$lib/components/VisualizationPanel.svelte';
   import ValidationPanel from '$lib/components/ValidationPanel.svelte';
@@ -110,9 +112,17 @@
       }
     });
 
+    // Files opened via the OS file association: a pending one queued before the
+    // UI was ready, plus a live event for opens while the app is running.
+    const unlistenOpen = listen<string>('open-file', (e) => openPath(e.payload));
+    api.takePendingOpen().then((path) => {
+      if (path) openPath(path);
+    });
+
     return () => {
       unlisten.then((fn) => fn());
       unlistenDrop.then((fn) => fn());
+      unlistenOpen.then((fn) => fn());
       window.removeEventListener('resize', updateNarrow);
     };
   });
