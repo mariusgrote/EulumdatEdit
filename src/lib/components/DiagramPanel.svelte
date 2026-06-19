@@ -9,6 +9,10 @@
     { id: 'c45c225', label: 'C45/C225' },
     { id: 'c135c315', label: 'C135/C315' }
   ];
+  // Must mirror the palette used by eulumdat-core's polar_svg renderer so the
+  // HTML legend swatches match the drawn curves (colors are assigned by index
+  // among the *enabled* planes).
+  const PALETTE = ['#1f77b4', '#d62728', '#2ca02c', '#9467bd', '#ff7f0e'];
 
   let planes = $state<Record<string, boolean>>({
     c0c180: true,
@@ -21,6 +25,16 @@
   let renderError = $state<string | null>(null);
   let timer: ReturnType<typeof setTimeout> | null = null;
 
+  // plane id -> curve color, indexed by its position among the enabled planes.
+  const colorOf = $derived.by(() => {
+    const map: Record<string, string> = {};
+    let i = 0;
+    for (const p of ALL_PLANES) {
+      if (planes[p.id]) map[p.id] = PALETTE[i++ % PALETTE.length];
+    }
+    return map;
+  });
+
   function fmt(v: number | null | undefined, digits = 1): string {
     if (v === null || v === undefined || !Number.isFinite(v)) return '—';
     return v.toFixed(digits);
@@ -32,11 +46,11 @@
       return;
     }
     const opts: PolarOptions = {
-      width: 460,
-      height: 460,
+      width: 520,
+      height: 520,
       planes: ALL_PLANES.filter((p) => planes[p.id]).map((p) => p.id),
       showGrid: true,
-      showLegend: true,
+      showLegend: false,
       showAxisLabels: true,
       intensityMode,
       title: null
@@ -66,7 +80,7 @@
   const p = $derived(store.photometry);
 </script>
 
-<aside class="panel">
+<div class="panel">
   <div class="diagram-wrap">
     {#if renderError}
       <div class="err">{renderError}</div>
@@ -81,8 +95,12 @@
   <div class="controls">
     <div class="planes">
       {#each ALL_PLANES as plane}
-        <label class="chk">
+        <label class="chk" class:on={planes[plane.id]}>
           <input type="checkbox" bind:checked={planes[plane.id]} />
+          <span
+            class="swatch"
+            style:background={planes[plane.id] ? colorOf[plane.id] : 'transparent'}
+          ></span>
           {plane.label}
         </label>
       {/each}
@@ -119,30 +137,27 @@
       <span class="v">{fmt(p?.fieldAngleC90C270)}<small> °</small></span>
     </div>
   </div>
-</aside>
+</div>
 
 <style>
   .panel {
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    padding: 18px;
+    gap: 14px;
+    padding: 16px;
     overflow-y: auto;
+    min-height: 0;
   }
   .diagram-wrap {
-    background: var(--bg-elev);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 10px;
+    width: 100%;
+    aspect-ratio: 1 / 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: var(--shadow);
-    min-height: 300px;
   }
   .diagram-wrap :global(svg) {
-    max-width: 100%;
-    height: auto;
+    width: 100%;
+    height: 100%;
   }
   .placeholder,
   .err {
@@ -162,17 +177,28 @@
   .planes {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 6px;
+    gap: 4px 14px;
   }
   .chk {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
     font-size: 13px;
-    color: var(--text-dim);
+    color: var(--text-faint);
+    padding: 3px 0;
+  }
+  .chk.on {
+    color: var(--text);
   }
   .chk input {
     width: auto;
+  }
+  .swatch {
+    width: 14px;
+    height: 3px;
+    border-radius: 2px;
+    border: 1px solid var(--border-strong);
+    flex: none;
   }
   .stats {
     display: grid;
@@ -180,10 +206,10 @@
     gap: 8px;
   }
   .stat {
-    background: var(--bg-elev);
+    background: var(--bg-sunken);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: 10px 12px;
+    padding: 9px 12px;
     display: flex;
     flex-direction: column;
     gap: 2px;
