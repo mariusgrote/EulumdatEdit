@@ -75,8 +75,9 @@
     display: flex;
     align-items: center;
     gap: 20px;
-    padding: 0 16px;
-    height: 52px;
+    /* leave room for the macOS traffic lights (titleBarStyle: Overlay) */
+    padding: 0 14px 0 82px;
+    height: 46px;
     background: var(--bg-elev);
     border-bottom: 1px solid var(--border);
     -webkit-app-region: drag;
