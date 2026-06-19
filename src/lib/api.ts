@@ -31,6 +31,10 @@ export function scaleTo100Percent(): Promise<DocResponse> {
   return invoke('scale_to_100_percent');
 }
 
+export function setStrictValidation(enabled: boolean): Promise<DocResponse> {
+  return invoke('set_strict_validation', { enabled });
+}
+
 export function renderPolarSvg(options: PolarOptions): Promise<string> {
   return invoke('render_polar_svg', { options });
 }

@@ -17,6 +17,18 @@
     </button>
   </div>
 
+  <label class="strict">
+    <input
+      type="checkbox"
+      checked={store.strictValidation}
+      onchange={(e) => store.setStrictValidation(e.currentTarget.checked)}
+    />
+    <span>
+      <span class="strict-title">Legacy strict limits</span>
+      <span class="strict-hint">Enforce the original EULUMDAT 8.3-era field lengths (8-char file name, etc.).</span>
+    </span>
+  </label>
+
   <div class="vbody">
     {#if store.warnings.length === 0}
       <div class="ok">
@@ -71,6 +83,36 @@
   }
   .icon {
     padding: 4px 8px;
+  }
+  .strict {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .strict input[type='checkbox'] {
+    width: auto;
+    margin: 2px 0 0;
+    padding: 0;
+    border: none;
+    background: none;
+    flex-shrink: 0;
+  }
+  .strict span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .strict-title {
+    font-size: 13px;
+    color: var(--text);
+  }
+  .strict-hint {
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--text-faint);
   }
   .vbody {
     overflow-y: auto;

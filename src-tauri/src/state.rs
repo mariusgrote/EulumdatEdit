@@ -12,6 +12,9 @@ pub struct OpenDoc {
     pub path: Option<String>,
     /// Whether the in-memory model differs from the last saved state.
     pub dirty: bool,
+    /// When set, enforces the legacy EULUMDAT text-length limits (8.3-era
+    /// filename, etc.). Off by default; modern files are unrestricted.
+    pub strict_validation: bool,
 }
 
 /// Shared, mutex-guarded application state.

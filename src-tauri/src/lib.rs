@@ -20,6 +20,7 @@ pub fn run() {
             commands::save_as,
             commands::resample_gamma,
             commands::scale_to_100_percent,
+            commands::set_strict_validation,
             commands::render_polar_svg,
         ])
         .run(tauri::generate_context!())

@@ -88,6 +88,8 @@ pub struct DocResponse {
     pub photometry: PhotometryDto,
     pub path: Option<String>,
     pub dirty: bool,
+    /// Whether legacy strict text-length validation is currently enabled.
+    pub strict_validation: bool,
 }
 
 impl From<&LampSet> for LampSetDto {

@@ -15,16 +15,28 @@ use crate::dto::{warnings_to_dto, DocResponse, EulumdatDto, PhotometryDto};
 use crate::state::AppState;
 
 /// Builds the standard response bundle from the current document.
-fn respond(model: &Eulumdat, path: Option<String>, dirty: bool) -> Result<DocResponse, String> {
-    let warnings = model
-        .validate(ValidationSettings::restricted())
-        .map_err(|e| e.to_string())?;
+///
+/// `strict` selects the legacy EULUMDAT text-length limits; when false the
+/// model is validated with `ValidationSettings::unrestricted()` (the default).
+fn respond(
+    model: &Eulumdat,
+    path: Option<String>,
+    dirty: bool,
+    strict: bool,
+) -> Result<DocResponse, String> {
+    let settings = if strict {
+        ValidationSettings::restricted()
+    } else {
+        ValidationSettings::unrestricted()
+    };
+    let warnings = model.validate(settings).map_err(|e| e.to_string())?;
     Ok(DocResponse {
         doc: EulumdatDto::from(model),
         warnings: warnings_to_dto(&warnings),
         photometry: PhotometryDto::from_model(model),
         path,
         dirty,
+        strict_validation: strict,
     })
 }
 
@@ -36,7 +48,7 @@ pub fn new_from_template(state: State<'_, AppState>) -> Result<DocResponse, Stri
     doc.model = Some(model.clone());
     doc.path = None;
     doc.dirty = false;
-    respond(&model, None, false)
+    respond(&model, None, false, doc.strict_validation)
 }
 
 /// Opens and parses a `.ldt` file from disk.
@@ -47,7 +59,7 @@ pub fn open_file(path: String, state: State<'_, AppState>) -> Result<DocResponse
     doc.model = Some(model.clone());
     doc.path = Some(path.clone());
     doc.dirty = false;
-    respond(&model, Some(path), false)
+    respond(&model, Some(path), false, doc.strict_validation)
 }
 
 /// Replaces the in-memory model with an edited DTO from the UI.
@@ -60,7 +72,7 @@ pub fn update_document(doc: EulumdatDto, state: State<'_, AppState>) -> Result<D
     state_doc.model = Some(model.clone());
     state_doc.dirty = true;
     let path = state_doc.path.clone();
-    respond(&model, path, true)
+    respond(&model, path, true, state_doc.strict_validation)
 }
 
 /// Saves the current model to its existing path.
@@ -77,7 +89,7 @@ pub fn save(state: State<'_, AppState>) -> Result<DocResponse, String> {
         .ok_or_else(|| "No document open".to_string())?;
     model.write_path(&path).map_err(|e| e.to_string())?;
     doc.dirty = false;
-    respond(&model, Some(path), false)
+    respond(&model, Some(path), false, doc.strict_validation)
 }
 
 /// Saves the current model to a new path and associates the document with it.
@@ -91,7 +103,7 @@ pub fn save_as(path: String, state: State<'_, AppState>) -> Result<DocResponse, 
     model.write_path(&path).map_err(|e| e.to_string())?;
     doc.path = Some(path.clone());
     doc.dirty = false;
-    respond(&model, Some(path), false)
+    respond(&model, Some(path), false, doc.strict_validation)
 }
 
 /// Resamples the gamma table to a new angular step.
@@ -106,7 +118,7 @@ pub fn resample_gamma(step: u32, state: State<'_, AppState>) -> Result<DocRespon
     doc.model = Some(model.clone());
     doc.dirty = true;
     let path = doc.path.clone();
-    respond(&model, path, true)
+    respond(&model, path, true, doc.strict_validation)
 }
 
 /// Scales the distribution so its peak reaches 100% (1000 cd/klm at peak C-plane).
@@ -121,7 +133,25 @@ pub fn scale_to_100_percent(state: State<'_, AppState>) -> Result<DocResponse, S
     doc.model = Some(model.clone());
     doc.dirty = true;
     let path = doc.path.clone();
-    respond(&model, path, true)
+    respond(&model, path, true, doc.strict_validation)
+}
+
+/// Enables or disables the legacy strict text-length validation and
+/// re-validates the open document under the new setting.
+#[tauri::command]
+pub fn set_strict_validation(
+    enabled: bool,
+    state: State<'_, AppState>,
+) -> Result<DocResponse, String> {
+    let mut doc = state.doc.lock().unwrap();
+    doc.strict_validation = enabled;
+    let model = doc
+        .model
+        .clone()
+        .ok_or_else(|| "No document open".to_string())?;
+    let path = doc.path.clone();
+    let dirty = doc.dirty;
+    respond(&model, path, dirty, enabled)
 }
 
 /// Options for the polar diagram, as sent from the UI.

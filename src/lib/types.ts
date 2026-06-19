@@ -65,6 +65,8 @@ export interface DocResponse {
   photometry: Photometry;
   path: string | null;
   dirty: boolean;
+  /** Whether legacy strict text-length validation is currently enabled. */
+  strictValidation: boolean;
 }
 
 export interface PolarOptions {

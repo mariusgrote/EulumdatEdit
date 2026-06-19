@@ -12,6 +12,8 @@ class DocStore {
   dirty = $state(false);
   busy = $state(false);
   error = $state<string | null>(null);
+  /** Legacy EULUMDAT text-length limits (8.3 filename, etc.). Off by default. */
+  strictValidation = $state(false);
 
   #commitTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -23,6 +25,7 @@ class DocStore {
     this.photometry = res.photometry;
     this.path = res.path;
     this.dirty = res.dirty;
+    this.strictValidation = res.strictValidation;
     this.error = null;
   }
 
@@ -66,6 +69,16 @@ class DocStore {
   async scaleTo100() {
     const res = await this.#run(() => api.scaleTo100Percent());
     if (res) this.#apply(res, true);
+  }
+
+  /** Toggles legacy strict validation and re-validates the open document. */
+  async setStrictValidation(enabled: boolean) {
+    if (!this.doc) {
+      this.strictValidation = enabled;
+      return;
+    }
+    const res = await this.#run(() => api.setStrictValidation(enabled));
+    if (res) this.#apply(res, false);
   }
 
   /** Marks the document dirty and schedules a debounced validate/recompute. */
