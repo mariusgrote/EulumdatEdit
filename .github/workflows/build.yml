@@ -29,11 +29,12 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up build environment
         uses: ./.github/actions/setup
         with:
+          eulumdat-core-token: ${{ secrets.EULUMDAT_CORE_TOKEN }}
           rust-targets: ${{ matrix.rust-targets }}
 
       - name: Build Tauri app
