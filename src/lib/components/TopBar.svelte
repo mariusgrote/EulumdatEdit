@@ -53,7 +53,7 @@
   const warnCount = $derived(store.warnings.length);
 </script>
 
-<header class="topbar">
+<header class="topbar" data-tauri-drag-region="deep">
   <div class="brand">
     <span class="logo">◐</span>
     <span class="name">EulumdatEdit</span>
@@ -123,11 +123,6 @@
     height: 46px;
     background: var(--bg-elev);
     border-bottom: 1px solid var(--border);
-    -webkit-app-region: drag;
-  }
-  .topbar button,
-  .topbar .file {
-    -webkit-app-region: no-drag;
   }
   .brand {
     display: flex;
