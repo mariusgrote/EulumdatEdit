@@ -12,11 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "EulumdatEdit",
+        "title": "",
         "width": 1280,
         "height": 820,
         "minWidth": 900,
-        "minHeight": 600
+        "minHeight": 600,
+        "titleBarStyle": "Overlay"
       }
     ],
     "security": {
@@ -26,6 +27,15 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "fileAssociations": [
+      {
+        "ext": ["ldt"],
+        "name": "EULUMDAT",
+        "description": "EULUMDAT photometric data file",
+        "role": "Editor",
+        "mimeType": "text/plain"
+      }
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
