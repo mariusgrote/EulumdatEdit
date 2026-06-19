@@ -32,7 +32,8 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app, event| {
-            // macOS delivers file-association / "Open with" requests here.
+            // macOS/iOS/Android deliver file-association / "Open with" requests here.
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
             if let tauri::RunEvent::Opened { urls } = event {
                 if let Some(path) = urls
                     .iter()
