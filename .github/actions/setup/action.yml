@@ -1,15 +1,7 @@
 name: Setup build environment
-description: Install dependencies and check out the eulumdat-core sibling crate
+description: Install dependencies for building EulumdatEdit
 
 inputs:
-  eulumdat-core-repo:
-    description: GitHub repository for the eulumdat-core dependency
-    required: false
-    default: mariusgrote/eulumdat-core
-  eulumdat-core-token:
-    description: Optional token for private eulumdat-core access (defaults to GITHUB_TOKEN)
-    required: false
-    default: ''
   rust-targets:
     description: Optional comma-separated Rust targets to install
     required: false
@@ -18,23 +10,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Check out eulumdat-core
-      uses: actions/checkout@v6
-      with:
-        repository: ${{ inputs.eulumdat-core-repo }}
-        path: eulumdat-core
-        token: ${{ inputs.eulumdat-core-token || github.token }}
-
-    - name: Link eulumdat-core for Cargo path dependency
-      if: runner.os != 'Windows'
-      shell: bash
-      run: ln -sf "$GITHUB_WORKSPACE/eulumdat-core" "$GITHUB_WORKSPACE/../eulumdat-core"
-
-    - name: Link eulumdat-core for Cargo path dependency (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: New-Item -ItemType Junction -Path "$env:GITHUB_WORKSPACE\..\eulumdat-core" -Target "$env:GITHUB_WORKSPACE\eulumdat-core" -Force
-
     - name: Install pnpm
       uses: pnpm/action-setup@v4
       with:
