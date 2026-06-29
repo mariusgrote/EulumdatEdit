@@ -62,6 +62,14 @@ pub fn open_file(path: String, state: State<'_, AppState>) -> Result<DocResponse
     respond(&model, Some(path), false, doc.strict_validation)
 }
 
+/// Clears the open document and returns the app to its empty state.
+#[tauri::command]
+pub fn close_document(state: State<'_, AppState>) -> Result<(), String> {
+    let mut doc = state.doc.lock().unwrap();
+    *doc = crate::state::OpenDoc::default();
+    Ok(())
+}
+
 /// Returns and clears any file the OS queued for opening before the UI was
 /// ready (e.g. launching the app by double-clicking a `.ldt` file).
 #[tauri::command]

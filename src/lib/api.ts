@@ -11,6 +11,10 @@ export function openFile(path: string): Promise<DocResponse> {
   return invoke('open_file', { path });
 }
 
+export function closeDocument(): Promise<void> {
+  return invoke('close_document');
+}
+
 /** Drains any file the OS queued for opening before the UI was ready. */
 export function takePendingOpen(): Promise<string | null> {
   return invoke('take_pending_open');
