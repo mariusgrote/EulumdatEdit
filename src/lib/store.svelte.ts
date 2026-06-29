@@ -65,8 +65,15 @@ class DocStore {
 
   /** Closes the open document and returns the UI to the welcome screen. */
   async close() {
-    const ok = await this.#run(() => api.closeDocument());
-    if (ok === null) return;
+    const res = await this.#run(async () => {
+      await api.closeDocument();
+      return true;
+    });
+    if (!res) return;
+    if (this.#commitTimer) {
+      clearTimeout(this.#commitTimer);
+      this.#commitTimer = null;
+    }
     this.doc = null;
     this.warnings = [];
     this.photometry = null;
