@@ -1,6 +1,7 @@
 <script lang="ts">
   import { store } from '$lib/store.svelte';
-  import { open as openDialog, save as saveDialog, ask } from '@tauri-apps/plugin-dialog';
+  import { EULUMDAT_FILTER, newDocument, openFileDialog } from '$lib/documentActions';
+  import { save as saveDialog, ask } from '@tauri-apps/plugin-dialog';
 
   interface Props {
     showValidation: boolean;
@@ -9,19 +10,6 @@
     togglePanel: () => void;
   }
   let { showValidation, toggleValidation, panelCollapsed, togglePanel }: Props = $props();
-
-  const filter = [{ name: 'EULUMDAT', extensions: ['ldt', 'LDT'] }];
-
-  async function doNew() {
-    if (!(await store.confirmDiscardChanges())) return;
-    await store.newDoc();
-  }
-
-  async function doOpen() {
-    if (!(await store.confirmDiscardChanges())) return;
-    const path = await openDialog({ multiple: false, filters: filter });
-    if (typeof path === 'string') await store.open(path);
-  }
 
   async function doSave() {
     if (store.path) {
@@ -33,7 +21,7 @@
 
   async function doSaveAs() {
     const path = await saveDialog({
-      filters: filter,
+      filters: EULUMDAT_FILTER,
       defaultPath: store.doc?.fileName || 'luminaire.ldt'
     });
     if (path) await store.saveAs(path);
@@ -79,8 +67,8 @@
   </div>
 
   <div class="actions">
-    <button class="btn ghost" onclick={doNew}>New</button>
-    <button class="btn ghost" onclick={doOpen}>Open</button>
+    <button class="btn ghost" onclick={newDocument}>New</button>
+    <button class="btn ghost" onclick={openFileDialog}>Open</button>
     <button class="btn" onclick={doSave} disabled={!store.doc}>Save</button>
     <button class="btn ghost" onclick={doSaveAs} disabled={!store.doc}>Save As</button>
 

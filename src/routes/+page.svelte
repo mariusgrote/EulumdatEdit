@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { store } from '$lib/store.svelte';
-  import { open as openDialog } from '@tauri-apps/plugin-dialog';
+  import { newDocument, openFileDialog } from '$lib/documentActions';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { listen } from '@tauri-apps/api/event';
   import * as api from '$lib/api';
@@ -64,20 +64,6 @@
     }
   }
 
-  async function openFile() {
-    if (!(await store.confirmDiscardChanges())) return;
-    const path = await openDialog({
-      multiple: false,
-      filters: [{ name: 'EULUMDAT', extensions: ['ldt', 'LDT'] }]
-    });
-    if (typeof path === 'string') await store.open(path);
-  }
-
-  async function newDoc() {
-    if (!(await store.confirmDiscardChanges())) return;
-    await store.newDoc();
-  }
-
   // Opens a known path (drag-and-drop, file association) behind the same
   // unsaved-changes guard the Open button uses.
   async function openPath(path: string) {
@@ -138,10 +124,10 @@
       if (store.doc) store.save();
     } else if (k === 'o') {
       e.preventDefault();
-      openFile();
+      openFileDialog();
     } else if (k === 'n') {
       e.preventDefault();
-      newDoc();
+      newDocument();
     }
   }
 </script>
@@ -180,8 +166,10 @@
           <h1>EulumdatEdit</h1>
           <p>Open a EULUMDAT <code>.ldt</code> file or start a new luminaire.</p>
           <div class="welcome-actions">
-            <button class="btn primary" onclick={newDoc}>New luminaire</button>
+            <button class="btn primary" onclick={openFileDialog}>Open .ldt file…</button>
+            <button class="btn" onclick={newDocument}>New luminaire</button>
           </div>
+          <p class="welcome-hint">or drag and drop a <code>.ldt</code> file anywhere</p>
           {#if store.error}<p class="err">{store.error}</p>{/if}
         </div>
       {:else}
@@ -334,6 +322,15 @@
   }
   .welcome-actions {
     margin-top: 8px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .welcome-hint {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--text-faint);
   }
   .err {
     color: var(--danger);
