@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { store } from '$lib/store.svelte';
   import { newDocument, openFileDialog, closeDocument } from '$lib/documentActions';
+  import { setupAppMenu } from '$lib/appMenu';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { listen } from '@tauri-apps/api/event';
   import * as api from '$lib/api';
@@ -76,11 +77,16 @@
   onMount(() => {
     const appWindow = getCurrentWindow();
     const unlisten = appWindow.onCloseRequested(async (event) => {
-      event.preventDefault();
-      if (await store.confirmDiscardChanges()) {
-        await appWindow.close();
+      if (!(await store.confirmDiscardChanges())) {
+        event.preventDefault();
       }
     });
+
+    setupAppMenu({
+      onNew: () => newDocument(),
+      onOpen: () => openFileDialog(),
+      onClose: () => onCloseShortcut()
+    }).catch((e) => console.error('Failed to set up app menu:', e));
 
     const updateNarrow = () => (narrow = window.innerWidth < PANEL_MIN_WIDTH);
     updateNarrow();
