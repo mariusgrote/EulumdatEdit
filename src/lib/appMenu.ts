@@ -1,11 +1,25 @@
 import { Menu, MenuItem, PredefinedMenuItem, Submenu } from '@tauri-apps/api/menu';
 
-/** Installs the app menu so macOS routes Cmd+W to close-document, not window-close. */
+/** Whether we're running on macOS, where the global menu bar lives at the top
+ *  of the screen and Cmd+W is routed through the menu rather than the webview. */
+function isMacOS(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Mac/i.test(navigator.userAgent);
+}
+
+/** Installs the app menu so macOS routes Cmd+W to close-document, not
+ *  window-close.
+ *
+ *  macOS only: on Windows/Linux the menu would be rendered as a per-window
+ *  menu bar, which clashes with the app's custom title bar. Those platforms
+ *  rely on the webview keyboard handler for the same shortcuts instead. */
 export async function setupAppMenu(handlers: {
   onNew: () => void;
   onOpen: () => void;
   onClose: () => void;
 }): Promise<void> {
+  if (!isMacOS()) return;
+
   const appMenu = await Submenu.new({
     text: 'EulumdatEdit',
     items: [

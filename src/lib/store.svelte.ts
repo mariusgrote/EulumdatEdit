@@ -80,6 +80,7 @@ class DocStore {
     this.path = null;
     this.dirty = false;
     this.error = null;
+    this.strictValidation = false;
   }
 
   /** Discards in-memory edits by reloading the document from its file on disk.
