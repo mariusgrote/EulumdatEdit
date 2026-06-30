@@ -10,6 +10,7 @@
   import {
     findFieldElement,
     resolveWarningTargets,
+    warningsBySection,
     type SectionId
   } from '$lib/warningNavigation';
   import TopBar from '$lib/components/TopBar.svelte';
@@ -54,6 +55,12 @@
 
   // Highlighted while a file is dragged over the window.
   let dragOver = $state(false);
+
+  const sectionWarningCounts = $derived(
+    store.doc
+      ? warningsBySection(store.warnings, store.doc, store.strictValidation)
+      : { general: 0, geometry: 0, lamps: 0, intensity: 0 }
+  );
 
   $effect(() => {
     const n = narrow;
@@ -217,6 +224,7 @@
         <button
           class="navitem"
           class:active={active === s.id}
+          class:has-warnings={sectionWarningCounts[s.id] > 0}
           onclick={() => (active = s.id)}
           disabled={!store.doc}
         >
@@ -224,6 +232,11 @@
             <path d={s.icon} />
           </svg>
           <span>{s.label}</span>
+          {#if sectionWarningCounts[s.id] > 0}
+            <span class="nav-badge" aria-label="{sectionWarningCounts[s.id]} warnings">
+              {sectionWarningCounts[s.id]}
+            </span>
+          {/if}
         </button>
       {/each}
     </nav>
@@ -349,6 +362,22 @@
   }
   .navitem.active .ico {
     color: var(--accent-strong);
+  }
+  .navitem.has-warnings:not(.active) .ico {
+    color: var(--warn);
+  }
+  .nav-badge {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    background: var(--warn);
+    color: #1a1205;
+    border-radius: 10px;
+    padding: 0 6px;
+    font-size: 10px;
+    font-weight: 600;
+    min-width: 18px;
+    text-align: center;
+    line-height: 18px;
   }
   .content {
     overflow-y: auto;
