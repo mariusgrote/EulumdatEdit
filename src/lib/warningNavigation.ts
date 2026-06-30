@@ -159,7 +159,10 @@ export function resolveWarningTarget(
     const prop = LAMP_FIELD_KEYS[warning.field];
     if (!prop) return { section, fieldKey: null };
     const indices = offendingLampIndices(warning.field, doc, strictValidation);
-    const lampIndex = indices[occurrence] ?? indices[0];
+    // No `?? indices[0]` fallback: if our re-derived predicate disagrees with the
+    // backend on which sets offend, leave the warning unmapped rather than point
+    // at the wrong lamp.
+    const lampIndex = indices[occurrence];
     if (lampIndex === undefined) return { section, fieldKey: null };
     return { section, fieldKey: `lamps.${lampIndex}.${prop}` };
   }
