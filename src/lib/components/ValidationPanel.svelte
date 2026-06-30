@@ -19,12 +19,6 @@
     if (!isNavigableTarget(targets[index])) return;
     onnavigate?.(w, index);
   }
-
-  function handleKeydown(e: KeyboardEvent, w: Warning, index: number) {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    e.preventDefault();
-    handleNavigate(w, index);
-  }
 </script>
 
 <div class="vpanel">
@@ -61,18 +55,24 @@
         {#each store.warnings as w, i}
           {@const target = targets[i]}
           {@const navigable = isNavigableTarget(target)}
-          <li
-            class:navigable
-            class:orphan={!navigable}
-            role={navigable ? 'button' : undefined}
-            tabindex={navigable ? 0 : undefined}
-            title={navigable ? 'Go to field' : 'No editor for this field'}
-            onclick={() => handleNavigate(w, i)}
-            onkeydown={(e) => handleKeydown(e, w, i)}
-          >
-            <span class="wfield">{w.field}</span>
-            <span class="wmsg">{w.message}</span>
-          </li>
+          {#if navigable}
+            <li>
+              <button
+                type="button"
+                class="warn-item"
+                title="Go to field"
+                onclick={() => handleNavigate(w, i)}
+              >
+                <span class="wfield">{w.field}</span>
+                <span class="wmsg">{w.message}</span>
+              </button>
+            </li>
+          {:else}
+            <li class="orphan" title="No editor for this field">
+              <span class="wfield">{w.field}</span>
+              <span class="wmsg">{w.message}</span>
+            </li>
+          {/if}
         {/each}
       </ul>
     {/if}
@@ -174,20 +174,34 @@
     border-left: 3px solid var(--warn);
     background: var(--bg-elev);
     border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+  li.orphan {
+    opacity: 0.75;
     padding: 9px 12px;
     display: flex;
     flex-direction: column;
     gap: 3px;
   }
-  li.navigable {
+  .warn-item {
+    width: 100%;
+    border: none;
+    background: transparent;
+    padding: 9px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    text-align: left;
     cursor: pointer;
+    color: inherit;
+    font: inherit;
   }
-  li.navigable:hover {
+  .warn-item:hover {
     background: var(--sel);
   }
-  li.orphan {
-    opacity: 0.75;
-    cursor: default;
+  .warn-item:focus-visible {
+    outline: 2px solid var(--warn);
+    outline-offset: -2px;
   }
   .wfield {
     font-size: 11px;
