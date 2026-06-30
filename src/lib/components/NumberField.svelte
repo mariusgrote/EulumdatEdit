@@ -6,6 +6,7 @@
     min?: number;
     max?: number;
     unit?: string;
+    fieldKey?: string;
     onedit: () => void;
   }
 
@@ -16,13 +17,14 @@
     min,
     max,
     unit,
+    fieldKey,
     onedit
   }: Props = $props();
 
   const uid = $props.id();
 </script>
 
-<div class="field">
+<div class="field" data-field-key={fieldKey}>
   <label for={uid}>{label}{#if unit}<span class="unit"> ({unit})</span>{/if}</label>
   <input
     id={uid}
@@ -31,6 +33,7 @@
     {step}
     {min}
     {max}
+    data-field-key={fieldKey}
     oninput={onedit}
   />
 </div>
