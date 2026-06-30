@@ -103,6 +103,13 @@ function warnRange(value: number, min: number, max: number): boolean {
   return value < min || value > max;
 }
 
+const utf8Encoder = new TextEncoder();
+
+/** UTF-8 byte length, matching Rust's `String::len()` used by the backend validator. */
+function byteLen(value: string): number {
+  return utf8Encoder.encode(value).length;
+}
+
 /** Returns lamp set indices that would emit a warning for `field`, in validation order. */
 export function offendingLampIndices(
   field: string,
@@ -124,13 +131,13 @@ function lampWouldWarn(field: string, lamp: LampSet, limits: ValidationLimits): 
     case 'Number of lamps':
       return warnRange(lamp.lampCount, 1, 1000);
     case 'Type of lamps':
-      return warnLen(lamp.lampType.length, limits.maxLampTypeLen);
+      return warnLen(byteLen(lamp.lampType), limits.maxLampTypeLen);
     case 'Total luminous flux of lamps':
       return warnRange(lamp.totalLuminousFlux, 1, 9_999_999);
     case 'Color temperature of lamps':
-      return warnLen(lamp.colorTemperature.length, limits.maxColorTemperatureLen);
+      return warnLen(byteLen(lamp.colorTemperature), limits.maxColorTemperatureLen);
     case 'Color rendering index':
-      return warnLen(lamp.colorRenderingIndex.length, limits.maxColorRenderingIndexLen);
+      return warnLen(byteLen(lamp.colorRenderingIndex), limits.maxColorRenderingIndexLen);
     case 'Wattage including ballast':
       return warnRange(lamp.wattageIncludingBallast, 0.1, 10_000);
     default:
