@@ -63,6 +63,26 @@ class DocStore {
     if (res) this.#apply(res, true);
   }
 
+  /** Closes the open document and returns the UI to the welcome screen. */
+  async close() {
+    const res = await this.#run(async () => {
+      await api.closeDocument();
+      return true;
+    });
+    if (!res) return;
+    if (this.#commitTimer) {
+      clearTimeout(this.#commitTimer);
+      this.#commitTimer = null;
+    }
+    this.doc = null;
+    this.warnings = [];
+    this.photometry = null;
+    this.path = null;
+    this.dirty = false;
+    this.error = null;
+    this.strictValidation = false;
+  }
+
   /** Discards in-memory edits by reloading the document from its file on disk.
    *  No-op for an unsaved (pathless) document. */
   async revert() {

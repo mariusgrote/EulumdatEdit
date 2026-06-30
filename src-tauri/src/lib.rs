@@ -21,6 +21,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::new_from_template,
             commands::open_file,
+            commands::close_document,
             commands::take_pending_open,
             commands::update_document,
             commands::save,

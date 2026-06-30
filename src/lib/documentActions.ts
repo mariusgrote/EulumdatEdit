@@ -13,3 +13,8 @@ export async function newDocument(): Promise<void> {
   if (!(await store.confirmDiscardChanges())) return;
   await store.newDoc();
 }
+
+export async function closeDocument(): Promise<void> {
+  if (!(await store.confirmDiscardChanges())) return;
+  await store.close();
+}
