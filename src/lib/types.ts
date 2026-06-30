@@ -46,6 +46,8 @@ export interface EulumdatDoc {
 export interface Warning {
   field: string;
   message: string;
+  /** Zero-based lamp set index for repeated lamp fields; null for document-level fields. */
+  lampIndex: number | null;
 }
 
 export interface Photometry {

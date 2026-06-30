@@ -9,7 +9,7 @@
   import type { Warning } from '$lib/types';
   import {
     findFieldElement,
-    resolveWarningTargets,
+    resolveWarningTarget,
     warningsBySection,
     type SectionId
   } from '$lib/warningNavigation';
@@ -54,11 +54,7 @@
   // Highlighted while a file is dragged over the window.
   let dragOver = $state(false);
 
-  const sectionWarningCounts = $derived(
-    store.doc
-      ? warningsBySection(store.warnings, store.doc, store.strictValidation)
-      : { general: 0, geometry: 0, lamps: 0, intensity: 0 }
-  );
+  const sectionWarningCounts = $derived(warningsBySection(store.warnings));
 
   $effect(() => {
     const n = narrow;
@@ -78,15 +74,10 @@
     }
   }
 
-  async function navigateToWarning(_warning: Warning, warningIndex: number) {
+  async function navigateToWarning(warning: Warning) {
     if (!store.doc) return;
 
-    const targets = resolveWarningTargets(
-      store.warnings,
-      store.doc,
-      store.strictValidation
-    );
-    const target = targets[warningIndex];
+    const target = resolveWarningTarget(warning);
     if (!target) return;
 
     active = target.section;

@@ -18,9 +18,7 @@ class DocStore {
   strictValidation = $state(false);
 
   /** Warning messages keyed by form field key, for inline display beside inputs. */
-  fieldWarnings = $derived.by<Record<string, string[]>>(() =>
-    this.doc ? warningsByField(this.warnings, this.doc, this.strictValidation) : {}
-  );
+  fieldWarnings = $derived.by<Record<string, string[]>>(() => warningsByField(this.warnings));
 
   /** Field key transiently highlighted after navigating to a warning. */
   highlightedFieldKey = $state<string | null>(null);

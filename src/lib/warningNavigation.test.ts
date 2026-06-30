@@ -1,67 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import type { EulumdatDoc, Warning } from './types';
+import type { Warning } from './types';
 import {
   getSectionForField,
   isDirectRatioField,
   isNavigableWarning,
-  offendingLampIndices,
   resolveWarningTarget,
   resolveWarningTargets,
   warningsByField,
   warningsBySection
 } from './warningNavigation';
 
-const baseDoc: EulumdatDoc = {
-  identification: 'ok',
-  typeIndicator: 1,
-  symmetry: 0,
-  cPlaneStep: 90,
-  gammaStep: 10,
-  measurementReportNumber: 'ok',
-  luminaireName: 'ok',
-  luminaireNumber: 'ok',
-  fileName: 'ok',
-  dateUser: 'ok',
-  luminaireLength: 100,
-  luminaireWidth: 100,
-  luminaireHeight: 50,
-  luminousAreaLength: 80,
-  luminousAreaWidth: 80,
-  luminousAreaHeightC0: 0,
-  luminousAreaHeightC90: 0,
-  luminousAreaHeightC180: 0,
-  luminousAreaHeightC270: 0,
-  downwardFluxFraction: 50,
-  lightOutputRatio: 100,
-  conversionFactor: 1,
-  tilt: 0,
-  lamps: [
-    {
-      lampCount: 1,
-      lampType: 'LED',
-      totalLuminousFlux: 1000,
-      colorTemperature: '4000K',
-      colorRenderingIndex: '80',
-      wattageIncludingBallast: 10
-    },
-    {
-      lampCount: 0,
-      lampType: 'LED',
-      totalLuminousFlux: 1000,
-      colorTemperature: '4000K',
-      colorRenderingIndex: '80',
-      wattageIncludingBallast: 10
-    }
-  ],
-  directRatios: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  cPlanes: [0, 90, 180],
-  gammaAngles: [0, 90, 180],
-  intensities: [
-    [1000, 500, 10],
-    [1000, 500, 10],
-    [1000, 500, 10]
-  ]
-};
+function w(field: string, message: string, lampIndex: number | null = null): Warning {
+  return { field, message, lampIndex };
+}
 
 describe('getSectionForField', () => {
   it('maps general, geometry, and lamp fields', () => {
@@ -78,36 +29,31 @@ describe('getSectionForField', () => {
 
 describe('resolveWarningTarget', () => {
   it('maps a geometry warning to a doc field key', () => {
-    const target = resolveWarningTarget(
-      { field: 'Width of luminaire', message: 'out of range' },
-      baseDoc,
-      false
-    );
-    expect(target).toEqual({ section: 'geometry', fieldKey: 'luminaireWidth' });
+    expect(resolveWarningTarget(w('Width of luminaire', 'out of range'))).toEqual({
+      section: 'geometry',
+      fieldKey: 'luminaireWidth'
+    });
   });
 
-  it('maps lamp warnings to indexed field keys', () => {
-    const target = resolveWarningTarget(
-      { field: 'Number of lamps', message: 'out of range' },
-      baseDoc,
-      false
-    );
-    expect(target).toEqual({ section: 'lamps', fieldKey: 'lamps.1.lampCount' });
+  it('maps a lamp warning to its indexed field key via lampIndex', () => {
+    expect(resolveWarningTarget(w('Number of lamps', 'out of range', 1))).toEqual({
+      section: 'lamps',
+      fieldKey: 'lamps.1.lampCount'
+    });
   });
 
-  it('assigns successive lamp sets to duplicate warnings', () => {
-    const warnings: Warning[] = [
-      { field: 'Number of lamps', message: 'a' },
-      { field: 'Number of lamps', message: 'b' }
-    ];
-    const doc: EulumdatDoc = {
-      ...baseDoc,
-      lamps: [
-        { ...baseDoc.lamps[0], lampCount: 0 },
-        { ...baseDoc.lamps[1], lampCount: 0 }
-      ]
-    };
-    const targets = resolveWarningTargets(warnings, doc, false);
+  it('leaves a lamp warning unmapped when it carries no lampIndex', () => {
+    expect(resolveWarningTarget(w('Number of lamps', 'out of range', null))).toEqual({
+      section: 'lamps',
+      fieldKey: null
+    });
+  });
+
+  it('assigns each lamp warning to the set named by its lampIndex', () => {
+    const targets = resolveWarningTargets([
+      w('Number of lamps', 'a', 0),
+      w('Number of lamps', 'b', 1)
+    ]);
     expect(targets[0]?.fieldKey).toBe('lamps.0.lampCount');
     expect(targets[1]?.fieldKey).toBe('lamps.1.lampCount');
   });
@@ -115,13 +61,12 @@ describe('resolveWarningTarget', () => {
 
 describe('warningsBySection', () => {
   it('counts warnings per sidebar section', () => {
-    const warnings: Warning[] = [
-      { field: 'Identification', message: 'too long' },
-      { field: 'Width of luminaire', message: 'out of range' },
-      { field: 'Number of lamps', message: 'out of range' },
-      { field: 'k[2]', message: 'out of range' }
-    ];
-    const counts = warningsBySection(warnings, baseDoc, false);
+    const counts = warningsBySection([
+      w('Identification', 'too long'),
+      w('Width of luminaire', 'out of range'),
+      w('Number of lamps', 'out of range', 0),
+      w('k[2]', 'out of range')
+    ]);
     expect(counts.general).toBe(1);
     expect(counts.geometry).toBe(1);
     expect(counts.lamps).toBe(1);
@@ -131,40 +76,35 @@ describe('warningsBySection', () => {
 
 describe('warningsByField', () => {
   it('groups messages by resolved field key', () => {
-    const warnings: Warning[] = [
-      { field: 'Identification', message: 'too long' },
-      { field: 'Width of luminaire', message: 'out of range' },
-      { field: 'Number of lamps', message: 'out of range' }
-    ];
-    const byField = warningsByField(warnings, baseDoc, false);
+    const byField = warningsByField([
+      w('Identification', 'too long'),
+      w('Width of luminaire', 'out of range'),
+      w('Number of lamps', 'out of range', 1)
+    ]);
     expect(byField.identification).toEqual(['too long']);
     expect(byField.luminaireWidth).toEqual(['out of range']);
     expect(byField['lamps.1.lampCount']).toEqual(['out of range']);
   });
 
   it('collects multiple messages under the same field key', () => {
-    const warnings: Warning[] = [
-      { field: 'Identification', message: 'first' },
-      { field: 'Identification', message: 'second' }
-    ];
-    const byField = warningsByField(warnings, baseDoc, false);
+    const byField = warningsByField([
+      w('Identification', 'first'),
+      w('Identification', 'second')
+    ]);
     expect(byField.identification).toEqual(['first', 'second']);
   });
 
   it('omits warnings with no editable field', () => {
-    const warnings: Warning[] = [{ field: 'k[2]', message: 'out of range' }];
-    expect(warningsByField(warnings, baseDoc, false)).toEqual({});
-  });
-});
-
-describe('offendingLampIndices', () => {
-  it('lists indices in validation order', () => {
-    expect(offendingLampIndices('Number of lamps', baseDoc, false)).toEqual([1]);
+    expect(warningsByField([w('k[2]', 'out of range')])).toEqual({});
   });
 });
 
 describe('isNavigableWarning', () => {
   it('is false for direct ratio warnings', () => {
-    expect(isNavigableWarning({ field: 'k[1]', message: 'x' }, baseDoc, false)).toBe(false);
+    expect(isNavigableWarning(w('k[1]', 'x'))).toBe(false);
+  });
+
+  it('is true for a lamp warning with a lampIndex', () => {
+    expect(isNavigableWarning(w('Number of lamps', 'x', 0))).toBe(true);
   });
 });

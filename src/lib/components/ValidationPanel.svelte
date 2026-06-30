@@ -5,19 +5,15 @@
 
   interface Props {
     onclose: () => void;
-    onnavigate?: (warning: Warning, index: number) => void;
+    onnavigate?: (warning: Warning) => void;
   }
   let { onclose, onnavigate }: Props = $props();
 
-  const targets = $derived(
-    store.doc
-      ? resolveWarningTargets(store.warnings, store.doc, store.strictValidation)
-      : []
-  );
+  const targets = $derived(resolveWarningTargets(store.warnings));
 
   function handleNavigate(w: Warning, index: number) {
     if (!isNavigableTarget(targets[index])) return;
-    onnavigate?.(w, index);
+    onnavigate?.(w);
   }
 </script>
 
