@@ -178,11 +178,30 @@ export function resolveWarningTargets(
   strictValidation: boolean
 ): (WarningTarget | null)[] {
   const counters: Record<string, number> = {};
+  // Cache offending-lamp lookups so a field warning that repeats per lamp set
+  // doesn't re-scan every set on each occurrence.
+  const lampIndexCache = new Map<string, number[]>();
 
   return warnings.map((warning) => {
     const occurrence = counters[warning.field] ?? 0;
     counters[warning.field] = occurrence + 1;
-    return resolveWarningTarget(warning, doc, strictValidation, occurrence);
+
+    const section = getSectionForField(warning.field);
+    if (section !== 'lamps') {
+      return resolveWarningTarget(warning, doc, strictValidation, occurrence);
+    }
+
+    const prop = LAMP_FIELD_KEYS[warning.field];
+    if (!prop) return { section, fieldKey: null };
+
+    let indices = lampIndexCache.get(warning.field);
+    if (!indices) {
+      indices = offendingLampIndices(warning.field, doc, strictValidation);
+      lampIndexCache.set(warning.field, indices);
+    }
+    const lampIndex = indices[occurrence];
+    if (lampIndex === undefined) return { section, fieldKey: null };
+    return { section, fieldKey: `lamps.${lampIndex}.${prop}` };
   });
 }
 
