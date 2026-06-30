@@ -7,6 +7,7 @@ import {
   offendingLampIndices,
   resolveWarningTarget,
   resolveWarningTargets,
+  warningsByField,
   warningsBySection
 } from './warningNavigation';
 
@@ -125,6 +126,34 @@ describe('warningsBySection', () => {
     expect(counts.geometry).toBe(1);
     expect(counts.lamps).toBe(1);
     expect(counts.intensity).toBe(0);
+  });
+});
+
+describe('warningsByField', () => {
+  it('groups messages by resolved field key', () => {
+    const warnings: Warning[] = [
+      { field: 'Identification', message: 'too long' },
+      { field: 'Width of luminaire', message: 'out of range' },
+      { field: 'Number of lamps', message: 'out of range' }
+    ];
+    const byField = warningsByField(warnings, baseDoc, false);
+    expect(byField.identification).toEqual(['too long']);
+    expect(byField.luminaireWidth).toEqual(['out of range']);
+    expect(byField['lamps.1.lampCount']).toEqual(['out of range']);
+  });
+
+  it('collects multiple messages under the same field key', () => {
+    const warnings: Warning[] = [
+      { field: 'Identification', message: 'first' },
+      { field: 'Identification', message: 'second' }
+    ];
+    const byField = warningsByField(warnings, baseDoc, false);
+    expect(byField.identification).toEqual(['first', 'second']);
+  });
+
+  it('omits warnings with no editable field', () => {
+    const warnings: Warning[] = [{ field: 'k[2]', message: 'out of range' }];
+    expect(warningsByField(warnings, baseDoc, false)).toEqual({});
   });
 });
 

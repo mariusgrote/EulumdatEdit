@@ -4,6 +4,7 @@
 import { ask } from '@tauri-apps/plugin-dialog';
 import * as api from './api';
 import type { DocResponse, EulumdatDoc, Photometry, Warning } from './types';
+import { warningsByField } from './warningNavigation';
 
 class DocStore {
   doc = $state<EulumdatDoc | null>(null);
@@ -15,6 +16,11 @@ class DocStore {
   error = $state<string | null>(null);
   /** Legacy EULUMDAT text-length limits (8.3 filename, etc.). Off by default. */
   strictValidation = $state(false);
+
+  /** Warning messages keyed by form field key, for inline display beside inputs. */
+  fieldWarnings = $derived.by<Record<string, string[]>>(() =>
+    this.doc ? warningsByField(this.warnings, this.doc, this.strictValidation) : {}
+  );
 
   #commitTimer: ReturnType<typeof setTimeout> | null = null;
 

@@ -195,6 +195,23 @@ export function warningsBySection(
   return counts;
 }
 
+/** Groups warning messages by the form field key they belong to, for inline display. */
+export function warningsByField(
+  warnings: Warning[],
+  doc: EulumdatDoc,
+  strictValidation: boolean
+): Record<string, string[]> {
+  const byField: Record<string, string[]> = {};
+
+  const targets = resolveWarningTargets(warnings, doc, strictValidation);
+  targets.forEach((target, i) => {
+    if (!target?.fieldKey) return;
+    (byField[target.fieldKey] ??= []).push(warnings[i].message);
+  });
+
+  return byField;
+}
+
 export function isNavigableTarget(target: WarningTarget | null): boolean {
   return target !== null;
 }
