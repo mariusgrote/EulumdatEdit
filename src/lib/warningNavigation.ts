@@ -87,7 +87,7 @@ export function getSectionForField(field: string): SectionId | null {
   if (GENERAL_FIELDS.has(field)) return 'general';
   if (GEOMETRY_FIELDS.has(field)) return 'geometry';
   if (LAMP_FIELDS.has(field)) return 'lamps';
-  if (DIRECT_RATIO_RE.test(field)) return null;
+  // Direct-ratio (k[n]) and intensity warnings have no editable field control.
   return null;
 }
 
