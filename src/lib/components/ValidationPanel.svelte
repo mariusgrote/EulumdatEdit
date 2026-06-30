@@ -1,9 +1,30 @@
 <script lang="ts">
   import { store } from '$lib/store.svelte';
+  import type { Warning } from '$lib/types';
+  import { isNavigableTarget, resolveWarningTargets } from '$lib/warningNavigation';
+
   interface Props {
     onclose: () => void;
+    onnavigate?: (warning: Warning, index: number) => void;
   }
-  let { onclose }: Props = $props();
+  let { onclose, onnavigate }: Props = $props();
+
+  const targets = $derived(
+    store.doc
+      ? resolveWarningTargets(store.warnings, store.doc, store.strictValidation)
+      : []
+  );
+
+  function handleNavigate(w: Warning, index: number) {
+    if (!isNavigableTarget(targets[index])) return;
+    onnavigate?.(w, index);
+  }
+
+  function handleKeydown(e: KeyboardEvent, w: Warning, index: number) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    handleNavigate(w, index);
+  }
 </script>
 
 <div class="vpanel">
@@ -37,8 +58,18 @@
       </div>
     {:else}
       <ul>
-        {#each store.warnings as w}
-          <li>
+        {#each store.warnings as w, i}
+          {@const target = targets[i]}
+          {@const navigable = isNavigableTarget(target)}
+          <li
+            class:navigable
+            class:orphan={!navigable}
+            role={navigable ? 'button' : undefined}
+            tabindex={navigable ? 0 : undefined}
+            title={navigable ? 'Go to field' : 'No editor for this field'}
+            onclick={() => handleNavigate(w, i)}
+            onkeydown={(e) => handleKeydown(e, w, i)}
+          >
             <span class="wfield">{w.field}</span>
             <span class="wmsg">{w.message}</span>
           </li>
@@ -147,6 +178,16 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
+  }
+  li.navigable {
+    cursor: pointer;
+  }
+  li.navigable:hover {
+    background: var(--sel);
+  }
+  li.orphan {
+    opacity: 0.75;
+    cursor: default;
   }
   .wfield {
     font-size: 11px;

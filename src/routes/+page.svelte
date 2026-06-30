@@ -1,11 +1,17 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { store } from '$lib/store.svelte';
   import { newDocument, openFileDialog, closeDocument } from '$lib/documentActions';
   import { setupAppMenu } from '$lib/appMenu';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { listen } from '@tauri-apps/api/event';
   import * as api from '$lib/api';
+  import type { Warning } from '$lib/types';
+  import {
+    findFieldElement,
+    resolveWarningTargets,
+    type SectionId
+  } from '$lib/warningNavigation';
   import TopBar from '$lib/components/TopBar.svelte';
   import VisualizationPanel from '$lib/components/VisualizationPanel.svelte';
   import ValidationPanel from '$lib/components/ValidationPanel.svelte';
@@ -33,9 +39,11 @@
     { id: 'intensity', label: 'Intensity', icon: 'M4 4v16h16M8 15l3-4 3 3 4-6' }
   ] as const;
 
-  type SectionId = (typeof sections)[number]['id'];
-  let active = $state<SectionId>('general');
+  type ActiveSectionId = SectionId;
+  let active = $state<ActiveSectionId>('general');
   let rightView = $state<'diagram' | 'validation'>('diagram');
+  let highlightedFieldKey = $state<string | null>(null);
+  let highlightTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Inspector (right column) visibility. The user can collapse it; it also
   // auto-collapses on narrow windows and restores when room returns.
@@ -64,6 +72,48 @@
       collapsed = false; // bring the panel back if it was hidden
     }
   }
+
+  async function navigateToWarning(_warning: Warning, warningIndex: number) {
+    if (!store.doc) return;
+
+    const targets = resolveWarningTargets(
+      store.warnings,
+      store.doc,
+      store.strictValidation
+    );
+    const target = targets[warningIndex];
+    if (!target) return;
+
+    active = target.section;
+
+    if (target.fieldKey) {
+      await tick();
+      const el = findFieldElement(target.fieldKey);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.focus({ preventScroll: true });
+        highlightedFieldKey = target.fieldKey;
+        if (highlightTimer) clearTimeout(highlightTimer);
+        highlightTimer = setTimeout(() => {
+          highlightedFieldKey = null;
+          highlightTimer = null;
+        }, 2000);
+      }
+    } else {
+      document.querySelector('.content')?.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+
+  $effect(() => {
+    const key = highlightedFieldKey;
+    document.querySelectorAll('[data-field-key].warn-highlight').forEach((node) => {
+      node.classList.remove('warn-highlight');
+    });
+    if (!key) return;
+    document.querySelectorAll(`[data-field-key="${CSS.escape(key)}"]`).forEach((node) => {
+      node.classList.add('warn-highlight');
+    });
+  });
 
   // Opens a known path (drag-and-drop, file association) behind the same
   // unsaved-changes guard the Open button uses.
@@ -205,7 +255,10 @@
     {#if store.doc && !collapsed}
       <aside class="inspector">
         {#if rightView === 'validation'}
-          <ValidationPanel onclose={() => (rightView = 'diagram')} />
+          <ValidationPanel
+            onclose={() => (rightView = 'diagram')}
+            onnavigate={navigateToWarning}
+          />
         {:else}
           <VisualizationPanel />
         {/if}
@@ -385,5 +438,11 @@
     background: var(--bg-sunken);
     padding: 1px 6px;
     border-radius: 4px;
+  }
+  :global([data-field-key].warn-highlight) {
+    outline: 2px solid var(--warn);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+    transition: outline 0.2s ease;
   }
 </style>

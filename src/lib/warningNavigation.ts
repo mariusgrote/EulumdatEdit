@@ -210,5 +210,18 @@ export function isNavigableWarning(
 
 /** CSS selector for a field key used in the form DOM. */
 export function fieldSelector(fieldKey: string): string {
-  return `[data-field-key="${fieldKey}"]`;
+  return `[data-field-key="${CSS.escape(fieldKey)}"]`;
+}
+
+/** Finds the focusable control for a field key in the mounted section DOM. */
+export function findFieldElement(fieldKey: string): HTMLElement | null {
+  const nodes = document.querySelectorAll<HTMLElement>(fieldSelector(fieldKey));
+  for (const node of nodes) {
+    if (node.matches('input, select, textarea')) return node;
+  }
+  for (const node of nodes) {
+    const input = node.querySelector<HTMLElement>('input, select, textarea');
+    if (input) return input;
+  }
+  return null;
 }
