@@ -1,9 +1,20 @@
 <script lang="ts">
   import { store } from '$lib/store.svelte';
+  import type { Warning } from '$lib/types';
+  import { isNavigableTarget, resolveWarningTargets } from '$lib/warningNavigation';
+
   interface Props {
     onclose: () => void;
+    onnavigate?: (warning: Warning) => void;
   }
-  let { onclose }: Props = $props();
+  let { onclose, onnavigate }: Props = $props();
+
+  const targets = $derived(resolveWarningTargets(store.warnings));
+
+  function handleNavigate(w: Warning, index: number) {
+    if (!isNavigableTarget(targets[index])) return;
+    onnavigate?.(w);
+  }
 </script>
 
 <div class="vpanel">
@@ -37,11 +48,27 @@
       </div>
     {:else}
       <ul>
-        {#each store.warnings as w}
-          <li>
-            <span class="wfield">{w.field}</span>
-            <span class="wmsg">{w.message}</span>
-          </li>
+        {#each store.warnings as w, i}
+          {@const target = targets[i]}
+          {@const navigable = isNavigableTarget(target)}
+          {#if navigable}
+            <li>
+              <button
+                type="button"
+                class="warn-item"
+                title="Go to field"
+                onclick={() => handleNavigate(w, i)}
+              >
+                <span class="wfield">{w.field}</span>
+                <span class="wmsg">{w.message}</span>
+              </button>
+            </li>
+          {:else}
+            <li class="orphan" title="No editor for this field">
+              <span class="wfield">{w.field}</span>
+              <span class="wmsg">{w.message}</span>
+            </li>
+          {/if}
         {/each}
       </ul>
     {/if}
@@ -143,10 +170,34 @@
     border-left: 3px solid var(--warn);
     background: var(--bg-elev);
     border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+  li.orphan {
+    opacity: 0.75;
     padding: 9px 12px;
     display: flex;
     flex-direction: column;
     gap: 3px;
+  }
+  .warn-item {
+    width: 100%;
+    border: none;
+    background: transparent;
+    padding: 9px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    text-align: left;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+  }
+  .warn-item:hover {
+    background: var(--sel);
+  }
+  .warn-item:focus-visible {
+    outline: 2px solid var(--warn);
+    outline-offset: -2px;
   }
   .wfield {
     font-size: 11px;

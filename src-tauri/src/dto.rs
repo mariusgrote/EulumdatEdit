@@ -63,6 +63,9 @@ pub struct LampSetDto {
 pub struct WarningDto {
     pub field: String,
     pub message: String,
+    /// Zero-based lamp set index when the warning belongs to a repeated lamp
+    /// field; `None` for document-level fields.
+    pub lamp_index: Option<usize>,
 }
 
 /// Derived photometric values shown alongside the editor.
@@ -226,6 +229,7 @@ pub fn warnings_to_dto(warnings: &[ValidationWarning]) -> Vec<WarningDto> {
         .map(|w| WarningDto {
             field: w.field.clone(),
             message: w.message.clone(),
+            lamp_index: w.lamp_index,
         })
         .collect()
 }

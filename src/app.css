@@ -120,6 +120,43 @@ input[type='number'] {
   font-variant-numeric: tabular-nums;
 }
 
+/* Inline validation: tint the offending control and list its messages below. */
+.field.has-warning > input,
+.field.has-warning > select,
+.field.has-warning > textarea {
+  border-color: var(--warn);
+}
+
+.field.has-warning > input:focus,
+.field.has-warning > select:focus,
+.field.has-warning > textarea:focus {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 3px rgba(201, 138, 0, 0.18);
+}
+
+.field-warning {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.field-warning > li {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--warn);
+}
+
+/* Transient highlight applied after navigating to a warning's field. */
+.field.warn-highlight {
+  outline: 2px solid var(--warn);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+  transition: outline 0.2s ease;
+}
+
 /* --- Buttons --- */
 .btn {
   display: inline-flex;

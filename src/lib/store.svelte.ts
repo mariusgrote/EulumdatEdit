@@ -4,6 +4,7 @@
 import { ask } from '@tauri-apps/plugin-dialog';
 import * as api from './api';
 import type { DocResponse, EulumdatDoc, Photometry, Warning } from './types';
+import { warningsByField } from './warningNavigation';
 
 class DocStore {
   doc = $state<EulumdatDoc | null>(null);
@@ -16,7 +17,24 @@ class DocStore {
   /** Legacy EULUMDAT text-length limits (8.3 filename, etc.). Off by default. */
   strictValidation = $state(false);
 
+  /** Warning messages keyed by form field key, for inline display beside inputs. */
+  fieldWarnings = $derived.by<Record<string, string[]>>(() => warningsByField(this.warnings));
+
+  /** Field key transiently highlighted after navigating to a warning. */
+  highlightedFieldKey = $state<string | null>(null);
+
   #commitTimer: ReturnType<typeof setTimeout> | null = null;
+  #highlightTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Highlights a field for a short window so the user can spot it after navigation. */
+  highlightField(fieldKey: string, durationMs = 2000) {
+    this.highlightedFieldKey = fieldKey;
+    if (this.#highlightTimer) clearTimeout(this.#highlightTimer);
+    this.#highlightTimer = setTimeout(() => {
+      this.highlightedFieldKey = null;
+      this.#highlightTimer = null;
+    }, durationMs);
+  }
 
   /** Applies a backend response. `replaceDoc` is false during live edits so the
    *  user's in-progress input isn't clobbered by the round-tripped copy. */

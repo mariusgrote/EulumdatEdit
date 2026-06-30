@@ -1,11 +1,18 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { store } from '$lib/store.svelte';
   import { newDocument, openFileDialog, closeDocument } from '$lib/documentActions';
   import { setupAppMenu } from '$lib/appMenu';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { listen } from '@tauri-apps/api/event';
   import * as api from '$lib/api';
+  import type { Warning } from '$lib/types';
+  import {
+    findFieldElement,
+    resolveWarningTarget,
+    warningsBySection,
+    type SectionId
+  } from '$lib/warningNavigation';
   import TopBar from '$lib/components/TopBar.svelte';
   import VisualizationPanel from '$lib/components/VisualizationPanel.svelte';
   import ValidationPanel from '$lib/components/ValidationPanel.svelte';
@@ -33,8 +40,8 @@
     { id: 'intensity', label: 'Intensity', icon: 'M4 4v16h16M8 15l3-4 3 3 4-6' }
   ] as const;
 
-  type SectionId = (typeof sections)[number]['id'];
-  let active = $state<SectionId>('general');
+  type ActiveSectionId = SectionId;
+  let active = $state<ActiveSectionId>('general');
   let rightView = $state<'diagram' | 'validation'>('diagram');
 
   // Inspector (right column) visibility. The user can collapse it; it also
@@ -46,6 +53,8 @@
 
   // Highlighted while a file is dragged over the window.
   let dragOver = $state(false);
+
+  const sectionWarningCounts = $derived(warningsBySection(store.warnings));
 
   $effect(() => {
     const n = narrow;
@@ -62,6 +71,27 @@
     } else {
       rightView = 'validation';
       collapsed = false; // bring the panel back if it was hidden
+    }
+  }
+
+  async function navigateToWarning(warning: Warning) {
+    if (!store.doc) return;
+
+    const target = resolveWarningTarget(warning);
+    if (!target) return;
+
+    active = target.section;
+
+    if (target.fieldKey) {
+      await tick();
+      const el = findFieldElement(target.fieldKey);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.focus({ preventScroll: true });
+        store.highlightField(target.fieldKey);
+      }
+    } else {
+      document.querySelector('.content')?.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }
 
@@ -167,6 +197,7 @@
         <button
           class="navitem"
           class:active={active === s.id}
+          class:has-warnings={sectionWarningCounts[s.id] > 0}
           onclick={() => (active = s.id)}
           disabled={!store.doc}
         >
@@ -174,6 +205,11 @@
             <path d={s.icon} />
           </svg>
           <span>{s.label}</span>
+          {#if sectionWarningCounts[s.id] > 0}
+            <span class="nav-badge" aria-label="{sectionWarningCounts[s.id]} warnings">
+              {sectionWarningCounts[s.id]}
+            </span>
+          {/if}
         </button>
       {/each}
     </nav>
@@ -205,7 +241,10 @@
     {#if store.doc && !collapsed}
       <aside class="inspector">
         {#if rightView === 'validation'}
-          <ValidationPanel onclose={() => (rightView = 'diagram')} />
+          <ValidationPanel
+            onclose={() => (rightView = 'diagram')}
+            onnavigate={navigateToWarning}
+          />
         {:else}
           <VisualizationPanel />
         {/if}
@@ -296,6 +335,22 @@
   }
   .navitem.active .ico {
     color: var(--accent-strong);
+  }
+  .navitem.has-warnings:not(.active) .ico {
+    color: var(--warn);
+  }
+  .nav-badge {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    background: var(--warn);
+    color: #1a1205;
+    border-radius: 10px;
+    padding: 0 6px;
+    font-size: 10px;
+    font-weight: 600;
+    min-width: 18px;
+    text-align: center;
+    line-height: 18px;
   }
   .content {
     overflow-y: auto;

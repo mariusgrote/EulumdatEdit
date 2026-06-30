@@ -730,7 +730,7 @@ dependencies = [
 [[package]]
 name = "eulumdat-core"
 version = "0.1.0"
-source = "git+https://github.com/mariusgrote/eulumdat-core.git?branch=main#ae7fbc267b2af7c56e82228983eaa526f4243bed"
+source = "git+https://github.com/mariusgrote/eulumdat-core.git?branch=main#924c9cdef4539b8cc1be6a8ff8987196d81926b6"
 dependencies = [
  "encoding_rs",
  "svg",

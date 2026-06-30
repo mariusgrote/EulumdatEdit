@@ -10,27 +10,28 @@
 <div class="card">
   <h3>Identification</h3>
   <div class="stack">
-    <TextField label="Identification" bind:value={doc.identification} onedit={edit} />
+    <TextField fieldKey="identification" label="Identification" bind:value={doc.identification} onedit={edit} />
     <div class="grid-2">
-      <TextField label="Luminaire name" bind:value={doc.luminaireName} onedit={edit} />
-      <TextField label="Luminaire number" bind:value={doc.luminaireNumber} onedit={edit} />
+      <TextField fieldKey="luminaireName" label="Luminaire name" bind:value={doc.luminaireName} onedit={edit} />
+      <TextField fieldKey="luminaireNumber" label="Luminaire number" bind:value={doc.luminaireNumber} onedit={edit} />
     </div>
     <div class="grid-2">
       <TextField
+        fieldKey="measurementReportNumber"
         label="Measurement report number"
         bind:value={doc.measurementReportNumber}
         onedit={edit}
       />
-      <TextField label="File name" bind:value={doc.fileName} onedit={edit} />
+      <TextField fieldKey="fileName" label="File name" bind:value={doc.fileName} onedit={edit} />
     </div>
-    <TextField label="Date / user" bind:value={doc.dateUser} onedit={edit} />
+    <TextField fieldKey="dateUser" label="Date / user" bind:value={doc.dateUser} onedit={edit} />
   </div>
 </div>
 
 <div class="card">
   <h3>Classification</h3>
   <div class="grid-2">
-    <div class="field">
+    <div class="field" data-field-key="typeIndicator">
       <label for="type-indicator">Type indicator</label>
       <select id="type-indicator" bind:value={doc.typeIndicator} onchange={edit}>
         {#each Object.entries(TYPE_INDICATOR_LABELS) as [val, label]}
@@ -38,7 +39,7 @@
         {/each}
       </select>
     </div>
-    <div class="field">
+    <div class="field" data-field-key="symmetry">
       <label for="symmetry">Symmetry</label>
       <select id="symmetry" bind:value={doc.symmetry} onchange={edit}>
         {#each Object.entries(SYMMETRY_LABELS) as [val, label]}

@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
     "tauri": "tauri"
   },
   "devDependencies": {
@@ -19,7 +20,8 @@
     "svelte": "^5.19.0",
     "svelte-check": "^4.1.4",
     "typescript": "^5.7.3",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vitest": "^3.2.6"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.2.0",
