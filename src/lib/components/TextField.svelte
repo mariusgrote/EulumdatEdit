@@ -13,16 +13,21 @@
 
   const uid = $props.id();
   const warnings = $derived(fieldKey ? (store.fieldWarnings[fieldKey] ?? []) : []);
+  const highlighted = $derived(!!fieldKey && store.highlightedFieldKey === fieldKey);
 </script>
 
-<div class="field" data-field-key={fieldKey} class:has-warning={warnings.length > 0}>
+<div
+  class="field"
+  data-field-key={fieldKey}
+  class:has-warning={warnings.length > 0}
+  class:warn-highlight={highlighted}
+>
   <label for={uid}>{label}</label>
   <input
     id={uid}
     type="text"
     bind:value
     {placeholder}
-    data-field-key={fieldKey}
     oninput={onedit}
     aria-invalid={warnings.length > 0}
     aria-describedby={warnings.length > 0 ? `${uid}-warn` : undefined}

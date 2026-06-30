@@ -33,7 +33,7 @@
   <div class="grid-2">
     <div class="field" data-field-key="typeIndicator">
       <label for="type-indicator">Type indicator</label>
-      <select id="type-indicator" data-field-key="typeIndicator" bind:value={doc.typeIndicator} onchange={edit}>
+      <select id="type-indicator" bind:value={doc.typeIndicator} onchange={edit}>
         {#each Object.entries(TYPE_INDICATOR_LABELS) as [val, label]}
           <option value={Number(val)}>{label}</option>
         {/each}
@@ -41,7 +41,7 @@
     </div>
     <div class="field" data-field-key="symmetry">
       <label for="symmetry">Symmetry</label>
-      <select id="symmetry" data-field-key="symmetry" bind:value={doc.symmetry} onchange={edit}>
+      <select id="symmetry" bind:value={doc.symmetry} onchange={edit}>
         {#each Object.entries(SYMMETRY_LABELS) as [val, label]}
           <option value={Number(val)}>{label}</option>
         {/each}

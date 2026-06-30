@@ -149,6 +149,14 @@ input[type='number'] {
   color: var(--warn);
 }
 
+/* Transient highlight applied after navigating to a warning's field. */
+.field.warn-highlight {
+  outline: 2px solid var(--warn);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+  transition: outline 0.2s ease;
+}
+
 /* --- Buttons --- */
 .btn {
   display: inline-flex;

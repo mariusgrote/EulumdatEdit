@@ -43,8 +43,6 @@
   type ActiveSectionId = SectionId;
   let active = $state<ActiveSectionId>('general');
   let rightView = $state<'diagram' | 'validation'>('diagram');
-  let highlightedFieldKey = $state<string | null>(null);
-  let highlightTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Inspector (right column) visibility. The user can collapse it; it also
   // auto-collapses on narrow windows and restores when room returns.
@@ -99,28 +97,12 @@
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         el.focus({ preventScroll: true });
-        highlightedFieldKey = target.fieldKey;
-        if (highlightTimer) clearTimeout(highlightTimer);
-        highlightTimer = setTimeout(() => {
-          highlightedFieldKey = null;
-          highlightTimer = null;
-        }, 2000);
+        store.highlightField(target.fieldKey);
       }
     } else {
       document.querySelector('.content')?.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }
-
-  $effect(() => {
-    const key = highlightedFieldKey;
-    document.querySelectorAll('[data-field-key].warn-highlight').forEach((node) => {
-      node.classList.remove('warn-highlight');
-    });
-    if (!key) return;
-    document.querySelectorAll(`[data-field-key="${CSS.escape(key)}"]`).forEach((node) => {
-      node.classList.add('warn-highlight');
-    });
-  });
 
   // Opens a known path (drag-and-drop, file association) behind the same
   // unsaved-changes guard the Open button uses.
@@ -467,11 +449,5 @@
     background: var(--bg-sunken);
     padding: 1px 6px;
     border-radius: 4px;
-  }
-  :global([data-field-key].warn-highlight) {
-    outline: 2px solid var(--warn);
-    outline-offset: 2px;
-    border-radius: var(--radius-sm);
-    transition: outline 0.2s ease;
   }
 </style>
