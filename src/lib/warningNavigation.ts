@@ -8,83 +8,59 @@ export interface WarningTarget {
   fieldKey: string | null;
 }
 
-/** EULUMDAT validation field name → doc property key (top-level fields). */
-const DOC_FIELD_KEYS: Record<string, string> = {
-  Identification: 'identification',
-  'Measurement report number': 'measurementReportNumber',
-  'Luminaire name': 'luminaireName',
-  'Luminaire number': 'luminaireNumber',
-  'File name': 'fileName',
-  'Date/user': 'dateUser',
-  'Length/diameter of luminaire': 'luminaireLength',
-  'Width of luminaire': 'luminaireWidth',
-  'Height of luminaire': 'luminaireHeight',
-  'Length/diameter of luminous area': 'luminousAreaLength',
-  'Width of luminous area': 'luminousAreaWidth',
-  'Height of luminous area C0-plane': 'luminousAreaHeightC0',
-  'Height of luminous area C90-plane': 'luminousAreaHeightC90',
-  'Height of luminous area C180-plane': 'luminousAreaHeightC180',
-  'Height of luminous area C270-plane': 'luminousAreaHeightC270',
-  'Downward flux fraction': 'downwardFluxFraction',
-  'Light output ratio of luminaire': 'lightOutputRatio',
-  'Conversion factor for luminous intensities': 'conversionFactor',
-  'Tilt of luminaire during measurement': 'tilt'
-};
-
-/** Lamp validation field name → lamp set property key. */
-const LAMP_FIELD_KEYS: Record<string, keyof LampSet> = {
-  'Number of lamps': 'lampCount',
-  'Type of lamps': 'lampType',
-  'Total luminous flux of lamps': 'totalLuminousFlux',
-  'Color temperature of lamps': 'colorTemperature',
-  'Color rendering index': 'colorRenderingIndex',
-  'Wattage including ballast': 'wattageIncludingBallast'
-};
-
 const GENERAL_FIELDS = new Set([
-  'Identification',
-  'Measurement report number',
-  'Luminaire name',
-  'Luminaire number',
-  'File name',
-  'Date/user'
+  'identification',
+  'measurementReportNumber',
+  'luminaireName',
+  'luminaireNumber',
+  'fileName',
+  'dateUser',
+  'typeIndicator',
+  'symmetry'
 ]);
 
-const GEOMETRY_FIELDS = new Set(Object.keys(DOC_FIELD_KEYS).filter((f) => !GENERAL_FIELDS.has(f)));
+const GEOMETRY_FIELDS = new Set([
+  'luminaireLength',
+  'luminaireWidth',
+  'luminaireHeight',
+  'luminousAreaLength',
+  'luminousAreaWidth',
+  'luminousAreaHeightC0',
+  'luminousAreaHeightC90',
+  'luminousAreaHeightC180',
+  'luminousAreaHeightC270',
+  'downwardFluxFraction',
+  'lightOutputRatio',
+  'conversionFactor',
+  'tilt'
+]);
 
-const LAMP_FIELDS = new Set(Object.keys(LAMP_FIELD_KEYS));
-
-const DIRECT_RATIO_RE = /^k\[\d+\]$/;
-
-export function getSectionForField(field: string): SectionId | null {
-  if (GENERAL_FIELDS.has(field)) return 'general';
-  if (GEOMETRY_FIELDS.has(field)) return 'geometry';
-  if (LAMP_FIELDS.has(field)) return 'lamps';
-  // Direct-ratio (k[n]) and intensity warnings have no editable field control.
-  return null;
-}
-
-export function isDirectRatioField(field: string): boolean {
-  return DIRECT_RATIO_RE.test(field);
-}
+const LAMP_FIELDS = new Set<string>([
+  'lampCount',
+  'lampType',
+  'totalLuminousFlux',
+  'colorTemperature',
+  'colorRenderingIndex',
+  'wattageIncludingBallast'
+] satisfies (keyof LampSet)[]);
 
 /**
- * Resolves one warning to a navigation target. Lamp warnings are attributed to
- * their set via `warning.lampIndex`, supplied by the backend validator, so the
- * frontend never re-derives which set offends.
+ * Resolves one warning to a navigation target from its backend-supplied
+ * `fieldKey`; the display `field` label plays no part. Lamp warnings are
+ * attributed to their set via `warning.lampIndex`, so the frontend never
+ * re-derives which set offends.
  */
 export function resolveWarningTarget(warning: Warning): WarningTarget | null {
-  const section = getSectionForField(warning.field);
-  if (!section) return null;
+  const key = warning.fieldKey;
+  if (key === null) return null;
 
-  if (section === 'lamps') {
-    const prop = LAMP_FIELD_KEYS[warning.field];
-    if (!prop || warning.lampIndex === null) return { section, fieldKey: null };
-    return { section, fieldKey: `lamps.${warning.lampIndex}.${prop}` };
+  if (LAMP_FIELDS.has(key)) {
+    if (warning.lampIndex === null) return { section: 'lamps', fieldKey: null };
+    return { section: 'lamps', fieldKey: `lamps.${warning.lampIndex}.${key}` };
   }
-
-  const fieldKey = DOC_FIELD_KEYS[warning.field] ?? null;
-  return { section, fieldKey };
+  if (GENERAL_FIELDS.has(key)) return { section: 'general', fieldKey: key };
+  if (GEOMETRY_FIELDS.has(key)) return { section: 'geometry', fieldKey: key };
+  return null;
 }
 
 export function resolveWarningTargets(warnings: Warning[]): (WarningTarget | null)[] {

@@ -44,7 +44,14 @@ export interface EulumdatDoc {
 }
 
 export interface Warning {
+  /** Human-readable field label from the validator; display only. */
   field: string;
+  /**
+   * Stable camelCase field key (e.g. "luminaireLength"); null when the field has
+   * no form control. Lamp warnings carry the lamp set property key ("lampCount"),
+   * combined with `lampIndex` to address a specific set.
+   */
+  fieldKey: string | null;
   message: string;
   /** Zero-based lamp set index for repeated lamp fields; null for document-level fields. */
   lampIndex: number | null;

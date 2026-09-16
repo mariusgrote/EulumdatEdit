@@ -355,6 +355,87 @@ mod tests {
         assert!(svg.contains("<svg"));
     }
 
+    /// Runs `eulumdat-core`'s validator on a model that trips every warning and
+    /// checks each label translates to a field key. Fails when upstream rewords
+    /// a warning label, instead of warning navigation silently breaking.
+    #[test]
+    fn every_validator_warning_maps_to_a_field_key() {
+        let long = "x".repeat(1000);
+        let mut model = template_model();
+        model.identification = long.clone();
+        model.measurement_report_number = long.clone();
+        model.luminaire_name = long.clone();
+        model.luminaire_number = long.clone();
+        model.file_name = long.clone();
+        model.date_user = long.clone();
+        model.luminaire_length = 0.0;
+        model.luminaire_width = -1.0;
+        model.luminaire_height = -1.0;
+        model.luminous_area_length = -1.0;
+        model.luminous_area_width = -1.0;
+        model.luminous_area_height_c0 = -1.0;
+        model.luminous_area_height_c90 = -1.0;
+        model.luminous_area_height_c180 = -1.0;
+        model.luminous_area_height_c270 = -1.0;
+        model.downward_flux_fraction = 101.0;
+        model.light_output_ratio = 101.0;
+        model.conversion_factor = 11.0;
+        model.tilt = 181.0;
+        let lamp = &mut model.lamps[0];
+        lamp.lamp_count = 0;
+        lamp.lamp_type = long.clone();
+        lamp.total_luminous_flux = 0.0;
+        lamp.color_temperature = long.clone();
+        lamp.color_rendering_index = long;
+        lamp.wattage_including_ballast = 0.0;
+        model.direct_ratios[0] = 11.0;
+
+        let warnings = model
+            .validate(ValidationSettings::restricted())
+            .expect("warnings should not be hard errors");
+        let dtos = warnings_to_dto(&warnings);
+
+        for dto in &dtos {
+            assert!(
+                dto.field_key.is_some() || dto.field.starts_with("k["),
+                "no field key for validator warning {:?}",
+                dto.field
+            );
+        }
+
+        let mut keys: Vec<&str> = dtos.iter().filter_map(|d| d.field_key.as_deref()).collect();
+        keys.sort_unstable();
+        let mut expected = vec![
+            "identification",
+            "measurementReportNumber",
+            "luminaireName",
+            "luminaireNumber",
+            "fileName",
+            "dateUser",
+            "luminaireLength",
+            "luminaireWidth",
+            "luminaireHeight",
+            "luminousAreaLength",
+            "luminousAreaWidth",
+            "luminousAreaHeightC0",
+            "luminousAreaHeightC90",
+            "luminousAreaHeightC180",
+            "luminousAreaHeightC270",
+            "downwardFluxFraction",
+            "lightOutputRatio",
+            "conversionFactor",
+            "tilt",
+            "lampCount",
+            "lampType",
+            "totalLuminousFlux",
+            "colorTemperature",
+            "colorRenderingIndex",
+            "wattageIncludingBallast",
+        ];
+        expected.sort_unstable();
+        assert_eq!(keys, expected);
+    }
+
     /// A unique temp path per test so parallel runs don't collide.
     fn temp_export_path(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("eulumdat-edit-{}-{name}", std::process::id()))
