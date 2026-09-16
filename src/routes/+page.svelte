@@ -145,11 +145,14 @@
     });
 
     // Files opened via the OS file association: a pending one queued before the
-    // UI was ready, plus a live event for opens while the app is running.
+    // UI was ready, plus a live event for opens while the app is running. Drain
+    // the queue only once the listener exists so no open falls between the two.
     const unlistenOpen = listen<string>('open-file', (e) => openPath(e.payload));
-    api.takePendingOpen().then((path) => {
-      if (path) openPath(path);
-    });
+    unlistenOpen
+      .then(() => api.takePendingOpen())
+      .then((path) => {
+        if (path) openPath(path);
+      });
 
     return () => {
       unlisten.then((fn) => fn());

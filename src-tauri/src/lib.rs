@@ -2,20 +2,33 @@
 
 mod commands;
 mod dto;
+mod open_request;
 mod state;
 
-#[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
-use std::sync::atomic::Ordering;
-
-#[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
-use tauri::{Emitter, Manager};
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+use tauri::Manager;
 
 use state::AppState;
 
 /// Builds and runs the Tauri application.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // Windows/Linux launch a new process for every "Open with". Forward its
+    // file to the running window instead; this must be the first plugin.
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+        if let Some(path) = open_request::ldt_path_from_args(&args, std::path::Path::new(&cwd)) {
+            open_request::deliver(app, &path);
+        }
+    }));
+
+    builder
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
@@ -33,6 +46,17 @@ pub fn run() {
             commands::render_polar_svg,
             commands::write_bytes,
         ])
+        .setup(|_app| {
+            // Windows/Linux pass the file that launched the app as an argument.
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
+            if let Some(path) = std::env::current_dir()
+                .ok()
+                .and_then(|cwd| open_request::ldt_path_from_args(std::env::args_os(), &cwd))
+            {
+                open_request::deliver(_app.handle(), &path);
+            }
+            Ok(())
+        })
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|_app, _event| {
@@ -42,15 +66,9 @@ pub fn run() {
                 if let Some(path) = urls
                     .iter()
                     .filter_map(|u| u.to_file_path().ok())
-                    .find(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("ldt")))
+                    .find(|p| open_request::is_ldt(p))
                 {
-                    let path = path.to_string_lossy().into_owned();
-                    let state = _app.state::<AppState>();
-                    if state.frontend_ready.load(Ordering::SeqCst) {
-                        let _ = _app.emit("open-file", &path);
-                    } else {
-                        *state.pending_open.lock().unwrap() = Some(path);
-                    }
+                    open_request::deliver(_app, &path);
                 }
             }
         });
