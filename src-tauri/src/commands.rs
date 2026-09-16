@@ -70,6 +70,15 @@ pub fn close_document(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/// Exits the application unconditionally.
+///
+/// The frontend calls this only after its unsaved-changes guard passes; Rust
+/// cannot see uncommitted drafts, so it does not check the dirty flag itself.
+#[tauri::command]
+pub fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 /// Returns and clears any file the OS queued for opening before the UI was
 /// ready (e.g. launching the app by double-clicking a `.ldt` file).
 #[tauri::command]

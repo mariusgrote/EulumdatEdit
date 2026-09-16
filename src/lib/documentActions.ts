@@ -1,4 +1,5 @@
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
+import * as api from '$lib/api';
 import { store } from '$lib/store.svelte';
 
 export const EULUMDAT_FILTER = [{ name: 'EULUMDAT', extensions: ['ldt', 'LDT'] }];
@@ -17,6 +18,12 @@ export async function newDocument(): Promise<void> {
 export async function closeDocument(): Promise<void> {
   if (!(await store.confirmDiscardChanges())) return;
   await store.close();
+}
+
+/** Quits the app after the same unsaved-changes guard as closing a document. */
+export async function quitApplication(): Promise<void> {
+  if (!(await store.confirmDiscardChanges())) return;
+  await api.quitApp();
 }
 
 /** Saves to the document's path, or falls back to a Save As dialog when the

@@ -5,7 +5,8 @@ vi.mock('./api', () => ({
   newFromTemplate: vi.fn(),
   closeDocument: vi.fn(),
   save: vi.fn(),
-  saveAs: vi.fn()
+  saveAs: vi.fn(),
+  quitApp: vi.fn()
 }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
@@ -17,7 +18,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 const api = await import('./api');
 const dialog = await import('@tauri-apps/plugin-dialog');
 const { store } = await import('./store.svelte');
-const { saveDocument } = await import('./documentActions');
+const { quitApplication, saveDocument } = await import('./documentActions');
 
 function makeResponse(overrides: Partial<DocResponse> = {}): DocResponse {
   return {
@@ -86,5 +87,45 @@ describe('saveDocument', () => {
     expect(dialog.save).not.toHaveBeenCalled();
     expect(api.save).not.toHaveBeenCalled();
     expect(api.saveAs).not.toHaveBeenCalled();
+  });
+});
+
+describe('quitApplication', () => {
+  it('quits without asking when no document is open', async () => {
+    await quitApplication();
+
+    expect(dialog.ask).not.toHaveBeenCalled();
+    expect(api.quitApp).toHaveBeenCalledOnce();
+  });
+
+  it('quits without asking when the document is clean', async () => {
+    vi.mocked(api.newFromTemplate).mockResolvedValue(makeResponse({ dirty: false }));
+    await store.newDoc();
+    vi.clearAllMocks();
+
+    await quitApplication();
+
+    expect(dialog.ask).not.toHaveBeenCalled();
+    expect(api.quitApp).toHaveBeenCalledOnce();
+  });
+
+  it('stays open when discarding a dirty document is declined', async () => {
+    await seedDoc(null);
+    vi.mocked(dialog.ask).mockResolvedValue(false);
+
+    await quitApplication();
+
+    expect(dialog.ask).toHaveBeenCalledOnce();
+    expect(api.quitApp).not.toHaveBeenCalled();
+  });
+
+  it('quits once discarding a dirty document is confirmed', async () => {
+    await seedDoc(null);
+    vi.mocked(dialog.ask).mockResolvedValue(true);
+
+    await quitApplication();
+
+    expect(dialog.ask).toHaveBeenCalledOnce();
+    expect(api.quitApp).toHaveBeenCalledOnce();
   });
 });

@@ -22,6 +22,7 @@ pub fn run() {
             commands::new_from_template,
             commands::open_file,
             commands::close_document,
+            commands::quit_app,
             commands::take_pending_open,
             commands::update_document,
             commands::save,

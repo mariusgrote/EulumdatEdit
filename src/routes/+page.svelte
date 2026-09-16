@@ -1,7 +1,13 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { store } from '$lib/store.svelte';
-  import { newDocument, openFileDialog, closeDocument, saveDocument } from '$lib/documentActions';
+  import {
+    newDocument,
+    openFileDialog,
+    closeDocument,
+    saveDocument,
+    quitApplication
+  } from '$lib/documentActions';
   import { setupAppMenu } from '$lib/appMenu';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { listen } from '@tauri-apps/api/event';
@@ -115,7 +121,8 @@
     setupAppMenu({
       onNew: () => newDocument(),
       onOpen: () => openFileDialog(),
-      onClose: () => onCloseShortcut()
+      onClose: () => onCloseShortcut(),
+      onQuit: () => quitApplication()
     }).catch((e) => console.error('Failed to set up app menu:', e));
 
     const updateNarrow = () => (narrow = window.innerWidth < PANEL_MIN_WIDTH);

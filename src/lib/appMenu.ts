@@ -17,6 +17,7 @@ export async function setupAppMenu(handlers: {
   onNew: () => void;
   onOpen: () => void;
   onClose: () => void;
+  onQuit: () => void;
 }): Promise<void> {
   if (!isMacOS()) return;
 
@@ -29,7 +30,13 @@ export async function setupAppMenu(handlers: {
       await PredefinedMenuItem.new({ item: 'HideOthers' }),
       await PredefinedMenuItem.new({ item: 'ShowAll' }),
       await PredefinedMenuItem.new({ item: 'Separator' }),
-      await PredefinedMenuItem.new({ item: 'Quit' })
+      // Custom item instead of the predefined Quit: native termination skips
+      // the window close-request handler and its unsaved-changes guard.
+      await MenuItem.new({
+        text: 'Quit EulumdatEdit',
+        accelerator: 'CmdOrCtrl+Q',
+        action: handlers.onQuit
+      })
     ]
   });
 

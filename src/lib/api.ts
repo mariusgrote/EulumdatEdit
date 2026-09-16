@@ -15,6 +15,11 @@ export function closeDocument(): Promise<void> {
   return invoke('close_document');
 }
 
+/** Exits the app. Call through `quitApplication`, which guards unsaved changes. */
+export function quitApp(): Promise<void> {
+  return invoke('quit_app');
+}
+
 /** Drains any file the OS queued for opening before the UI was ready. */
 export function takePendingOpen(): Promise<string | null> {
   return invoke('take_pending_open');
