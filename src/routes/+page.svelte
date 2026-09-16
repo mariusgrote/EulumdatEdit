@@ -388,7 +388,8 @@
     right: 0;
     bottom: 0;
     width: min(420px, calc(100vw - 200px));
-    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.28);
+    /* negative spread keeps the shadow off the top bar */
+    box-shadow: -20px 0 24px -12px rgba(0, 0, 0, 0.28);
     z-index: 10;
   }
   .welcome {
