@@ -253,9 +253,16 @@ pub fn render_polar_svg(
 }
 
 /// Writes raw bytes to a path on disk. Used by the UI to save exported graphs
-/// (SVG markup or rasterized PNG) to a user-chosen location.
+/// (SVG markup or rasterized PNG) to a user-chosen location. Restricted to
+/// those export formats so this command is not a general write primitive.
 #[tauri::command]
 pub fn write_bytes(path: String, contents: Vec<u8>) -> Result<(), String> {
+    let allowed = std::path::Path::new(&path)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("svg") || e.eq_ignore_ascii_case("png"));
+    if !allowed {
+        return Err("write_bytes only writes .svg or .png graph exports".to_string());
+    }
     std::fs::write(&path, contents).map_err(|e| e.to_string())
 }
 
@@ -346,5 +353,39 @@ mod tests {
             .to_polar_svg(&PolarDiagramOptions::default())
             .expect("polar svg should render");
         assert!(svg.contains("<svg"));
+    }
+
+    /// A unique temp path per test so parallel runs don't collide.
+    fn temp_export_path(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("eulumdat-edit-{}-{name}", std::process::id()))
+    }
+
+    #[test]
+    fn write_bytes_writes_svg_exports() {
+        let path = temp_export_path("graph.svg");
+        write_bytes(path.to_string_lossy().into_owned(), b"<svg/>".to_vec())
+            .expect("svg export should be written");
+        assert_eq!(std::fs::read(&path).unwrap(), b"<svg/>");
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn write_bytes_rejects_other_extensions() {
+        let path = temp_export_path("notes.txt");
+        let result = write_bytes(path.to_string_lossy().into_owned(), b"data".to_vec());
+        assert!(result.is_err());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn write_bytes_extension_check_is_case_insensitive() {
+        let path = temp_export_path("graph.PNG");
+        write_bytes(
+            path.to_string_lossy().into_owned(),
+            vec![0x89, b'P', b'N', b'G'],
+        )
+        .expect("uppercase .PNG should be accepted");
+        assert!(path.exists());
+        std::fs::remove_file(&path).unwrap();
     }
 }
