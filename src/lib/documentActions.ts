@@ -1,4 +1,4 @@
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { store } from '$lib/store.svelte';
 
 export const EULUMDAT_FILTER = [{ name: 'EULUMDAT', extensions: ['ldt', 'LDT'] }];
@@ -17,4 +17,24 @@ export async function newDocument(): Promise<void> {
 export async function closeDocument(): Promise<void> {
   if (!(await store.confirmDiscardChanges())) return;
   await store.close();
+}
+
+/** Saves to the document's path, or falls back to a Save As dialog when the
+ *  document has never been saved. */
+export async function saveDocument(): Promise<void> {
+  if (!store.doc) return;
+  if (store.path) {
+    await store.save();
+  } else {
+    await saveDocumentAs();
+  }
+}
+
+export async function saveDocumentAs(): Promise<void> {
+  if (!store.doc) return;
+  const path = await saveDialog({
+    filters: EULUMDAT_FILTER,
+    defaultPath: store.doc.fileName || 'luminaire.ldt'
+  });
+  if (path) await store.saveAs(path);
 }

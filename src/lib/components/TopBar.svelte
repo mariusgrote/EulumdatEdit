@@ -1,7 +1,12 @@
 <script lang="ts">
   import { store } from '$lib/store.svelte';
-  import { EULUMDAT_FILTER, newDocument, openFileDialog } from '$lib/documentActions';
-  import { save as saveDialog, ask } from '@tauri-apps/plugin-dialog';
+  import {
+    newDocument,
+    openFileDialog,
+    saveDocument,
+    saveDocumentAs
+  } from '$lib/documentActions';
+  import { ask } from '@tauri-apps/plugin-dialog';
 
   interface Props {
     showValidation: boolean;
@@ -10,22 +15,6 @@
     togglePanel: () => void;
   }
   let { showValidation, toggleValidation, panelCollapsed, togglePanel }: Props = $props();
-
-  async function doSave() {
-    if (store.path) {
-      await store.save();
-    } else {
-      await doSaveAs();
-    }
-  }
-
-  async function doSaveAs() {
-    const path = await saveDialog({
-      filters: EULUMDAT_FILTER,
-      defaultPath: store.doc?.fileName || 'luminaire.ldt'
-    });
-    if (path) await store.saveAs(path);
-  }
 
   async function doDiscard() {
     const ok = await ask(
@@ -36,7 +25,7 @@
   }
 
   const fileName = $derived(
-    store.path ? store.path.split('/').pop() : store.doc ? 'Untitled' : '—'
+    store.path ? store.path.split(/[\\/]/).pop() : store.doc ? 'Untitled' : '—'
   );
   const warnCount = $derived(store.warnings.length);
 </script>
@@ -69,8 +58,8 @@
   <div class="actions">
     <button class="btn ghost" onclick={newDocument}>New</button>
     <button class="btn ghost" onclick={openFileDialog}>Open</button>
-    <button class="btn" onclick={doSave} disabled={!store.doc}>Save</button>
-    <button class="btn ghost" onclick={doSaveAs} disabled={!store.doc}>Save As</button>
+    <button class="btn" onclick={saveDocument} disabled={!store.doc}>Save</button>
+    <button class="btn ghost" onclick={saveDocumentAs} disabled={!store.doc}>Save As</button>
 
     <button
       class="btn ghost badge-btn"

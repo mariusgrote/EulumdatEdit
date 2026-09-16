@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { store } from '$lib/store.svelte';
-  import { newDocument, openFileDialog, closeDocument } from '$lib/documentActions';
+  import { newDocument, openFileDialog, closeDocument, saveDocument } from '$lib/documentActions';
   import { setupAppMenu } from '$lib/appMenu';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { listen } from '@tauri-apps/api/event';
@@ -167,7 +167,7 @@
     const k = e.key.toLowerCase();
     if (k === 's') {
       e.preventDefault();
-      if (store.doc) store.save();
+      saveDocument();
     } else if (k === 'o') {
       e.preventDefault();
       openFileDialog();
