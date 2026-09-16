@@ -41,7 +41,7 @@
           </button>
         </div>
         <div class="grid-2">
-          <NumberField fieldKey={`lamps.${i}.lampCount`} label="Lamp count" min={0} bind:value={lamp.lampCount} onedit={edit} />
+          <NumberField fieldKey={`lamps.${i}.lampCount`} label="Lamp count" min={0} integer hardMin={0} bind:value={lamp.lampCount} onedit={edit} />
           <TextField fieldKey={`lamps.${i}.lampType`} label="Lamp type" bind:value={lamp.lampType} onedit={edit} />
           <NumberField fieldKey={`lamps.${i}.totalLuminousFlux`} label="Total luminous flux" unit="lm" bind:value={lamp.totalLuminousFlux} onedit={edit} />
           <NumberField fieldKey={`lamps.${i}.wattageIncludingBallast`} label="Wattage incl. ballast" unit="W" step={0.1} bind:value={lamp.wattageIncludingBallast} onedit={edit} />
