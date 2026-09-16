@@ -4,13 +4,12 @@
   import {
     newDocument,
     openFileDialog,
+    openPath,
     closeDocument,
     saveDocument,
     quitApplication
   } from '$lib/documentActions';
-  import { setupAppMenu } from '$lib/appMenu';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { listen } from '@tauri-apps/api/event';
+  import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
   import * as api from '$lib/api';
   import { isNarrowLayout } from '$lib/layout';
   import type { Warning } from '$lib/types';
@@ -102,29 +101,24 @@
     }
   }
 
-  // Opens a known path (drag-and-drop, file association) behind the same
-  // unsaved-changes guard the Open button uses.
-  async function openPath(path: string) {
-    if (!(await store.confirmDiscardChanges())) return;
-    await store.open(path);
-  }
-
   // Guard the window close button against discarding unsaved changes, and track
   // window width to auto-hide the inspector on narrow windows.
   onMount(() => {
-    const appWindow = getCurrentWindow();
+    const appWindow = getCurrentWebviewWindow();
     const unlisten = appWindow.onCloseRequested(async (event) => {
       if (!(await store.confirmDiscardChanges())) {
         event.preventDefault();
       }
     });
 
-    setupAppMenu({
-      onNew: () => newDocument(),
-      onOpen: () => openFileDialog(),
-      onClose: () => onCloseShortcut(),
-      onQuit: () => quitApplication()
-    }).catch((e) => console.error('Failed to set up app menu:', e));
+    // macOS app menu items, sent by the backend to the focused window.
+    const menuActions: Record<string, () => unknown> = {
+      new: newDocument,
+      open: openFileDialog,
+      close: onCloseShortcut,
+      quit: quitApplication
+    };
+    const unlistenMenu = appWindow.listen<string>('menu', (e) => menuActions[e.payload]?.());
 
     const updateNarrow = () => (narrow = isNarrowLayout(window.innerWidth));
     updateNarrow();
@@ -144,11 +138,12 @@
       }
     });
 
-    // Files opened via the OS file association: a pending one queued before the
+    // A window opened for a file or new document starts with it loaded. Then
+    // files opened via the OS file association: a pending one queued before the
     // UI was ready, plus a live event for opens while the app is running. Drain
     // the queue only once the listener exists so no open falls between the two.
-    const unlistenOpen = listen<string>('open-file', (e) => openPath(e.payload));
-    unlistenOpen
+    const unlistenOpen = appWindow.listen<string>('open-file', (e) => openPath(e.payload));
+    Promise.all([unlistenOpen, store.loadCurrent()])
       .then(() => api.takePendingOpen())
       .then((path) => {
         if (path) openPath(path);
@@ -158,6 +153,7 @@
       unlisten.then((fn) => fn());
       unlistenDrop.then((fn) => fn());
       unlistenOpen.then((fn) => fn());
+      unlistenMenu.then((fn) => fn());
       window.removeEventListener('resize', updateNarrow);
     };
   });
@@ -168,7 +164,7 @@
     if (store.doc) {
       await closeDocument();
     } else {
-      await getCurrentWindow().close();
+      await getCurrentWebviewWindow().close();
     }
   }
 
