@@ -38,6 +38,24 @@ jobs:
         with:
           rust-targets: ${{ matrix.rust-targets }}
 
+      # The app version and bundle file names come from package.json (via
+      # tauri.conf.json), so stamp the tag's version in before building.
+      - name: Set version from tag
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME is not a semantic version like v1.2.3"
+            exit 1
+          fi
+          npm pkg set version="$version"
+          VERSION="$version" node -e '
+            const fs = require("fs");
+            const path = "src-tauri/Cargo.toml";
+            const toml = fs.readFileSync(path, "utf8");
+            fs.writeFileSync(path, toml.replace(/^version = ".*"$/m, `version = "${process.env.VERSION}"`));
+          '
+
       - name: Build Tauri app
         run: pnpm tauri build ${{ matrix.args }}
 

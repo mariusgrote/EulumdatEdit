@@ -1,18 +1,30 @@
-import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { ask, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import * as api from '$lib/api';
 import { store } from '$lib/store.svelte';
 
 export const EULUMDAT_FILTER = [{ name: 'EULUMDAT', extensions: ['ldt', 'LDT'] }];
 
 export async function openFileDialog(): Promise<void> {
-  if (!(await store.confirmDiscardChanges())) return;
   const path = await openDialog({ multiple: false, filters: EULUMDAT_FILTER });
-  if (typeof path === 'string') await store.open(path);
+  if (typeof path === 'string') await openPath(path);
 }
 
+/** Opens `path` in this window when it is empty, otherwise in a new window. */
+export async function openPath(path: string): Promise<void> {
+  if (store.doc) {
+    await store.openInNewWindow(path);
+  } else {
+    await store.open(path);
+  }
+}
+
+/** Starts a new luminaire in this window when it is empty, otherwise in a new window. */
 export async function newDocument(): Promise<void> {
-  if (!(await store.confirmDiscardChanges())) return;
-  await store.newDoc();
+  if (store.doc) {
+    await store.openInNewWindow();
+  } else {
+    await store.newDoc();
+  }
 }
 
 export async function closeDocument(): Promise<void> {
@@ -20,9 +32,16 @@ export async function closeDocument(): Promise<void> {
   await store.close();
 }
 
-/** Quits the app after the same unsaved-changes guard as closing a document. */
+/** Quits the app, asking first when this or any other window has unsaved changes. */
 export async function quitApplication(): Promise<void> {
-  if (!(await store.confirmDiscardChanges())) return;
+  const unsaved = store.dirty || (await api.otherWindowsDirty());
+  if (unsaved) {
+    const ok = await ask('Unsaved changes in open windows will be lost. Quit anyway?', {
+      title: 'Unsaved changes',
+      kind: 'warning'
+    });
+    if (!ok) return;
+  }
   await api.quitApp();
 }
 

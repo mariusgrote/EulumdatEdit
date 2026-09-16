@@ -9,20 +9,44 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, EventTarget, Manager, WebviewWindow};
 
 use crate::state::AppState;
 
-/// Hands `path` to the frontend: live via the `open-file` event once the UI
-/// is listening, otherwise queued for `take_pending_open`.
+/// Hands `path` to the frontend: live via an `open-file` event to one window
+/// once the UI is listening, otherwise queued for `take_pending_open`. The
+/// receiving window opens it in place when empty, or in a new window.
 pub fn deliver(app: &AppHandle, path: &Path) {
     let path = path.to_string_lossy().into_owned();
     let state = app.state::<AppState>();
-    if state.frontend_ready.load(Ordering::SeqCst) {
-        let _ = app.emit("open-file", &path);
-    } else {
+    if !state.frontend_ready.load(Ordering::SeqCst) {
         *state.pending_open.lock().unwrap() = Some(path);
+    } else if let Some(window) = focus_window(app) {
+        let _ = app.emit_to(
+            EventTarget::webview_window(window.label()),
+            "open-file",
+            &path,
+        );
     }
+}
+
+/// The window app-level requests (menu items, OS opens) should act on: the
+/// focused one, or any window when the app is in the background.
+pub fn target_window(app: &AppHandle) -> Option<WebviewWindow> {
+    let windows = app.webview_windows();
+    windows
+        .values()
+        .find(|w| w.is_focused().unwrap_or(false))
+        .or_else(|| windows.values().next())
+        .cloned()
+}
+
+/// Brings the [`target_window`] to the front and returns it.
+pub fn focus_window(app: &AppHandle) -> Option<WebviewWindow> {
+    let window = target_window(app)?;
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+    Some(window)
 }
 
 /// Whether `path` has a `.ldt` extension (case-insensitive).

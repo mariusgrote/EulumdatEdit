@@ -11,8 +11,23 @@ export function openFile(path: string): Promise<DocResponse> {
   return invoke('open_file', { path });
 }
 
+/** Opens `path`, or a new template document when omitted, in a new window. */
+export function openWindow(path?: string): Promise<void> {
+  return invoke('open_window', { path: path ?? null });
+}
+
+/** The document already loaded for this window (set up by `openWindow`). */
+export function currentDocument(): Promise<DocResponse | null> {
+  return invoke('current_document');
+}
+
 export function closeDocument(): Promise<void> {
   return invoke('close_document');
+}
+
+/** Whether another window holds unsaved changes. */
+export function otherWindowsDirty(): Promise<boolean> {
+  return invoke('other_windows_dirty');
 }
 
 /** Exits the app. Call through `quitApplication`, which guards unsaved changes. */

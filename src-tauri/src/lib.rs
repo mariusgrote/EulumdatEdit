@@ -2,11 +2,12 @@
 
 mod commands;
 mod dto;
+#[cfg(target_os = "macos")]
+mod menu;
 mod open_request;
 mod state;
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use state::AppState;
 
@@ -16,13 +17,10 @@ pub fn run() {
     let builder = tauri::Builder::default();
 
     // Windows/Linux launch a new process for every "Open with". Forward its
-    // file to the running window instead; this must be the first plugin.
+    // file to the running app instead; this must be the first plugin.
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.unminimize();
-            let _ = window.set_focus();
-        }
+        open_request::focus_window(app);
         if let Some(path) = open_request::ldt_path_from_args(&args, std::path::Path::new(&cwd)) {
             open_request::deliver(app, &path);
         }
@@ -34,7 +32,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::new_from_template,
             commands::open_file,
+            commands::open_window,
+            commands::current_document,
             commands::close_document,
+            commands::other_windows_dirty,
             commands::quit_app,
             commands::take_pending_open,
             commands::update_document,
@@ -46,7 +47,28 @@ pub fn run() {
             commands::render_polar_svg,
             commands::write_bytes,
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                let state = window.state::<AppState>();
+                state.docs.lock().unwrap().remove(window.label());
+            }
+        })
+        .on_menu_event(|app, event| {
+            // Menu items act on the focused window, which owns the document.
+            if let Some(window) = open_request::target_window(app) {
+                let _ = app.emit_to(
+                    tauri::EventTarget::webview_window(window.label()),
+                    "menu",
+                    event.id().as_ref(),
+                );
+            } else if event.id() == "quit" {
+                app.exit(0);
+            }
+        })
         .setup(|_app| {
+            #[cfg(target_os = "macos")]
+            _app.set_menu(menu::build(_app.handle())?)?;
+
             // Windows/Linux pass the file that launched the app as an argument.
             #[cfg(any(target_os = "windows", target_os = "linux"))]
             if let Some(path) = std::env::current_dir()

@@ -1,6 +1,7 @@
-//! Application state: the currently open document plus editor metadata.
+//! Application state: one open document per window plus editor metadata.
 
-use std::sync::atomic::AtomicBool;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::Mutex;
 
 use eulumdat_core::Eulumdat;
@@ -21,7 +22,10 @@ pub struct OpenDoc {
 /// Shared, mutex-guarded application state.
 #[derive(Debug, Default)]
 pub struct AppState {
-    pub doc: Mutex<OpenDoc>,
+    /// Open documents keyed by the label of the window showing them.
+    pub docs: Mutex<HashMap<String, OpenDoc>>,
+    /// Source of unique labels for windows opened after `main`.
+    pub next_window_id: AtomicU32,
     /// A file the OS asked us to open (file association / `open with`) before
     /// the frontend was ready to receive it. Drained by `take_pending_open`.
     pub pending_open: Mutex<Option<String>>,

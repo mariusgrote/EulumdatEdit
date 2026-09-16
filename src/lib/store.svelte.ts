@@ -60,7 +60,7 @@ class DocStore {
     }
   }
 
-  /** Guards actions that would discard in-progress edits (New, Open, close).
+  /** Guards actions that would discard in-progress edits (close, quit).
    *  Returns true when it is safe to proceed: either the document is clean or
    *  the user confirmed discarding their unsaved changes. */
   async confirmDiscardChanges(): Promise<boolean> {
@@ -80,6 +80,18 @@ class DocStore {
   async open(path: string) {
     this.#cancelPendingCommit();
     const res = await this.#run(() => api.openFile(path));
+    if (res) this.#apply(res, true);
+  }
+
+  /** Opens `path`, or a new template document when omitted, in a new window.
+   *  Errors (e.g. an unparseable file) are reported in this window. */
+  async openInNewWindow(path?: string) {
+    await this.#run(() => api.openWindow(path));
+  }
+
+  /** Shows the document the backend prepared for this window, if any. */
+  async loadCurrent() {
+    const res = await this.#run(() => api.currentDocument());
     if (res) this.#apply(res, true);
   }
 
