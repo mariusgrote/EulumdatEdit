@@ -5,6 +5,10 @@
 
   const doc = $derived(store.doc!);
   const edit = () => store.edited();
+  const typeIndicatorLabel = $derived(
+    TYPE_INDICATOR_LABELS[doc.typeIndicator] ?? `Unknown (${doc.typeIndicator})`
+  );
+  const symmetryLabel = $derived(SYMMETRY_LABELS[doc.symmetry] ?? `Unknown (${doc.symmetry})`);
 </script>
 
 <div class="card">
@@ -32,25 +36,17 @@
   <h3>Classification</h3>
   <div class="grid-2">
     <div class="field" data-field-key="typeIndicator">
-      <label for="type-indicator">Type indicator</label>
-      <select id="type-indicator" bind:value={doc.typeIndicator} onchange={edit}>
-        {#each Object.entries(TYPE_INDICATOR_LABELS) as [val, label]}
-          <option value={Number(val)}>{label}</option>
-        {/each}
-      </select>
+      <span class="field-label">Type indicator</span>
+      <span class="readonly-value">{typeIndicatorLabel}</span>
     </div>
     <div class="field" data-field-key="symmetry">
-      <label for="symmetry">Symmetry</label>
-      <select id="symmetry" bind:value={doc.symmetry} onchange={edit}>
-        {#each Object.entries(SYMMETRY_LABELS) as [val, label]}
-          <option value={Number(val)}>{label}</option>
-        {/each}
-      </select>
+      <span class="field-label">Symmetry</span>
+      <span class="readonly-value">{symmetryLabel}</span>
     </div>
   </div>
   <p class="hint">
-    Changing symmetry may require the intensity table to be re-entered to match
-    the new stored C-plane count.
+    Classification follows the photometric distribution in this file. Changing it
+    safely requires converting the C-plane data, which this version does not support.
   </p>
 </div>
 
@@ -59,6 +55,19 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
+  }
+  .field-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+  .readonly-value {
+    font-size: 14px;
+    color: var(--text);
+    background: var(--field-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 7px 9px;
   }
   .hint {
     margin: 14px 0 0;

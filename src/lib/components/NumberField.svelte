@@ -1,5 +1,6 @@
 <script lang="ts">
   import { store } from '$lib/store.svelte';
+  import { committableNumber } from '$lib/numberInput';
 
   interface Props {
     label: string;
@@ -7,6 +8,10 @@
     step?: number;
     min?: number;
     max?: number;
+    /** Hard limits for values that can cross the DTO boundary; `min`/`max` are only hints. */
+    integer?: boolean;
+    hardMin?: number;
+    hardMax?: number;
     unit?: string;
     fieldKey?: string;
     onedit: () => void;
@@ -18,6 +23,9 @@
     step = 1,
     min,
     max,
+    integer = false,
+    hardMin,
+    hardMax,
     unit,
     fieldKey,
     onedit
@@ -26,6 +34,23 @@
   const uid = $props.id();
   const warnings = $derived(fieldKey ? (store.fieldWarnings[fieldKey] ?? []) : []);
   const highlighted = $derived(!!fieldKey && store.highlightedFieldKey === fieldKey);
+
+  function parse(input: HTMLInputElement): number | null {
+    return committableNumber(input.valueAsNumber, { integer, hardMin, hardMax });
+  }
+
+  // Empty or partial drafts stay in the DOM; only committable numbers reach the document.
+  function onInput(event: Event) {
+    const next = parse(event.currentTarget as HTMLInputElement);
+    if (next === null || next === value) return;
+    value = next;
+    onedit();
+  }
+
+  function onBlur(event: FocusEvent) {
+    const input = event.currentTarget as HTMLInputElement;
+    if (parse(input) === null) input.value = String(value);
+  }
 </script>
 
 <div
@@ -38,11 +63,12 @@
   <input
     id={uid}
     type="number"
-    bind:value
+    {value}
     {step}
     {min}
     {max}
-    oninput={onedit}
+    oninput={onInput}
+    onblur={onBlur}
     aria-invalid={warnings.length > 0}
     aria-describedby={warnings.length > 0 ? `${uid}-warn` : undefined}
   />

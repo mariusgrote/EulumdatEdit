@@ -1,11 +1,18 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { store } from '$lib/store.svelte';
-  import { newDocument, openFileDialog, closeDocument } from '$lib/documentActions';
+  import {
+    newDocument,
+    openFileDialog,
+    closeDocument,
+    saveDocument,
+    quitApplication
+  } from '$lib/documentActions';
   import { setupAppMenu } from '$lib/appMenu';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { listen } from '@tauri-apps/api/event';
   import * as api from '$lib/api';
+  import { isNarrowLayout } from '$lib/layout';
   import type { Warning } from '$lib/types';
   import {
     findFieldElement,
@@ -45,11 +52,11 @@
   let rightView = $state<'diagram' | 'validation'>('diagram');
 
   // Inspector (right column) visibility. The user can collapse it; it also
-  // auto-collapses on narrow windows and restores when room returns.
+  // auto-collapses on narrow windows and restores when room returns. On narrow
+  // windows an open inspector overlays the editor as a drawer.
   let collapsed = $state(false);
   let narrow = $state(false);
   let wasNarrow = false;
-  const PANEL_MIN_WIDTH = 900;
 
   // Highlighted while a file is dragged over the window.
   let dragOver = $state(false);
@@ -115,10 +122,11 @@
     setupAppMenu({
       onNew: () => newDocument(),
       onOpen: () => openFileDialog(),
-      onClose: () => onCloseShortcut()
+      onClose: () => onCloseShortcut(),
+      onQuit: () => quitApplication()
     }).catch((e) => console.error('Failed to set up app menu:', e));
 
-    const updateNarrow = () => (narrow = window.innerWidth < PANEL_MIN_WIDTH);
+    const updateNarrow = () => (narrow = isNarrowLayout(window.innerWidth));
     updateNarrow();
     window.addEventListener('resize', updateNarrow);
 
@@ -137,11 +145,14 @@
     });
 
     // Files opened via the OS file association: a pending one queued before the
-    // UI was ready, plus a live event for opens while the app is running.
+    // UI was ready, plus a live event for opens while the app is running. Drain
+    // the queue only once the listener exists so no open falls between the two.
     const unlistenOpen = listen<string>('open-file', (e) => openPath(e.payload));
-    api.takePendingOpen().then((path) => {
-      if (path) openPath(path);
-    });
+    unlistenOpen
+      .then(() => api.takePendingOpen())
+      .then((path) => {
+        if (path) openPath(path);
+      });
 
     return () => {
       unlisten.then((fn) => fn());
@@ -167,7 +178,7 @@
     const k = e.key.toLowerCase();
     if (k === 's') {
       e.preventDefault();
-      if (store.doc) store.save();
+      saveDocument();
     } else if (k === 'o') {
       e.preventDefault();
       openFileDialog();
@@ -191,7 +202,7 @@
     togglePanel={() => (collapsed = !collapsed)}
   />
 
-  <div class="body" class:no-inspector={collapsed || !store.doc}>
+  <div class="body" class:no-inspector={collapsed || !store.doc} class:narrow>
     <nav class="sidebar">
       {#each sections as s}
         <button
@@ -273,8 +284,10 @@
     display: grid;
     grid-template-columns: 200px minmax(0, 1fr) clamp(380px, 34vw, 520px);
     min-height: 0;
+    position: relative;
   }
-  .body.no-inspector {
+  .body.no-inspector,
+  .body.narrow {
     grid-template-columns: 200px minmax(0, 1fr);
   }
   .sidebar {
@@ -370,6 +383,17 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+  /* Narrow windows: overlay the editor instead of taking a grid column. */
+  .body.narrow .inspector {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(420px, calc(100vw - 200px));
+    /* negative spread keeps the shadow off the top bar */
+    box-shadow: -20px 0 24px -12px rgba(0, 0, 0, 0.28);
+    z-index: 10;
   }
   .welcome {
     height: 100%;

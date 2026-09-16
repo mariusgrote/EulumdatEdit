@@ -1,13 +1,17 @@
 <script lang="ts">
   import { store } from '$lib/store.svelte';
   import { ask } from '@tauri-apps/plugin-dialog';
+  import { isValidResampleStep } from '$lib/numberInput';
 
   const doc = $derived(store.doc!);
   // intensities[cPlaneRow][gammaIndex]
   const rows = $derived(doc.intensities.length);
   const cols = $derived(doc.gammaAngles.length);
 
-  let resampleStep = $state(1);
+  // Svelte's numeric binding yields null while the input is empty.
+  let resampleStep = $state<number | null>(1);
+  const validResampleStep = $derived(isValidResampleStep(resampleStep));
+  const resampleHintId = $props.id();
 
   function planeLabel(i: number): string {
     const angle = doc.cPlanes[i];
@@ -29,12 +33,14 @@
   }
 
   async function doResample() {
+    const step = resampleStep;
+    if (!isValidResampleStep(step)) return;
     const ok = await ask(
-      `This rebuilds the gamma table at a ${resampleStep}° step by interpolation. ` +
+      `This rebuilds the gamma table at a ${step}° step by interpolation. ` +
         'The current gamma angles and their values will be replaced. Continue?',
       { title: 'Resample γ', kind: 'warning' }
     );
-    if (ok) await store.resampleGamma(resampleStep);
+    if (ok) await store.resampleGamma(step);
   }
 </script>
 
@@ -51,13 +57,18 @@
           max="90"
           bind:value={resampleStep}
           aria-label="Gamma step"
+          aria-invalid={!validResampleStep}
+          aria-describedby={validResampleStep ? undefined : resampleHintId}
         />
-        <button class="btn" onclick={doResample}>
+        <button class="btn" onclick={doResample} disabled={!validResampleStep}>
           Resample γ
         </button>
       </div>
     </div>
   </div>
+  {#if !validResampleStep}
+    <p class="resample-hint" id={resampleHintId}>Enter a whole number from 1 to 90.</p>
+  {/if}
 
   <div class="scroll">
     <table>
@@ -115,6 +126,12 @@
   }
   .resample input {
     width: 64px;
+  }
+  .resample-hint {
+    margin: -6px 0 12px;
+    font-size: 12px;
+    color: var(--danger);
+    text-align: right;
   }
   .scroll {
     overflow: auto;

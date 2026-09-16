@@ -61,7 +61,13 @@ pub struct LampSetDto {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WarningDto {
+    /// Human-readable field label from `eulumdat-core`, for display only.
     pub field: String,
+    /// Stable camelCase key of the form field the warning belongs to, e.g.
+    /// `luminaireLength`. Lamp warnings carry the lamp set property key
+    /// (`lampCount`) and are combined with `lamp_index` by the frontend.
+    /// `None` when the field has no form control (direct ratios `k[n]`).
+    pub field_key: Option<String>,
     pub message: String,
     /// Zero-based lamp set index when the warning belongs to a repeated lamp
     /// field; `None` for document-level fields.
@@ -228,8 +234,88 @@ pub fn warnings_to_dto(warnings: &[ValidationWarning]) -> Vec<WarningDto> {
         .iter()
         .map(|w| WarningDto {
             field: w.field.clone(),
+            field_key: field_key_for(w).map(str::to_string),
             message: w.message.clone(),
             lamp_index: w.lamp_index,
         })
         .collect()
+}
+
+/// Translates `eulumdat-core`'s display label for a warning into the stable
+/// field key used by the frontend (`data-field-key`).
+///
+/// `eulumdat-core` exposes no machine-readable field identifier, so this match
+/// is the one place coupled to its wording. The tests in `commands.rs` run it
+/// against real validator output, so an upstream rename fails `cargo test`.
+fn field_key_for(warning: &ValidationWarning) -> Option<&'static str> {
+    let key = match warning.field.as_str() {
+        "Identification" => "identification",
+        "Measurement report number" => "measurementReportNumber",
+        "Luminaire name" => "luminaireName",
+        "Luminaire number" => "luminaireNumber",
+        "File name" => "fileName",
+        "Date/user" => "dateUser",
+        "Length/diameter of luminaire" => "luminaireLength",
+        "Width of luminaire" => "luminaireWidth",
+        "Height of luminaire" => "luminaireHeight",
+        "Length/diameter of luminous area" => "luminousAreaLength",
+        "Width of luminous area" => "luminousAreaWidth",
+        "Height of luminous area C0-plane" => "luminousAreaHeightC0",
+        "Height of luminous area C90-plane" => "luminousAreaHeightC90",
+        "Height of luminous area C180-plane" => "luminousAreaHeightC180",
+        "Height of luminous area C270-plane" => "luminousAreaHeightC270",
+        "Downward flux fraction" => "downwardFluxFraction",
+        "Light output ratio of luminaire" => "lightOutputRatio",
+        "Conversion factor for luminous intensities" => "conversionFactor",
+        "Tilt of luminaire during measurement" => "tilt",
+        "Number of lamps" => "lampCount",
+        "Type of lamps" => "lampType",
+        "Total luminous flux of lamps" => "totalLuminousFlux",
+        "Color temperature of lamps" => "colorTemperature",
+        "Color rendering index" => "colorRenderingIndex",
+        "Wattage including ballast" => "wattageIncludingBallast",
+        _ => return None,
+    };
+    Some(key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn warning(field: &str, lamp_index: Option<usize>) -> ValidationWarning {
+        ValidationWarning {
+            field: field.to_string(),
+            message: String::new(),
+            lamp_index,
+        }
+    }
+
+    #[test]
+    fn maps_general_geometry_and_lamp_fields() {
+        assert_eq!(
+            field_key_for(&warning("Luminaire name", None)),
+            Some("luminaireName")
+        );
+        assert_eq!(
+            field_key_for(&warning("Height of luminous area C90-plane", None)),
+            Some("luminousAreaHeightC90")
+        );
+        assert_eq!(
+            field_key_for(&warning("Number of lamps", Some(2))),
+            Some("lampCount")
+        );
+    }
+
+    #[test]
+    fn direct_ratio_fields_have_no_key() {
+        assert_eq!(field_key_for(&warning("k[3]", None)), None);
+    }
+
+    #[test]
+    fn dto_carries_field_key_and_lamp_index() {
+        let dto = warnings_to_dto(&[warning("Type of lamps", Some(1))]);
+        assert_eq!(dto[0].field_key.as_deref(), Some("lampType"));
+        assert_eq!(dto[0].lamp_index, Some(1));
+    }
 }
