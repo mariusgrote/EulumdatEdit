@@ -12,6 +12,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { listen } from '@tauri-apps/api/event';
   import * as api from '$lib/api';
+  import { isNarrowLayout } from '$lib/layout';
   import type { Warning } from '$lib/types';
   import {
     findFieldElement,
@@ -51,11 +52,11 @@
   let rightView = $state<'diagram' | 'validation'>('diagram');
 
   // Inspector (right column) visibility. The user can collapse it; it also
-  // auto-collapses on narrow windows and restores when room returns.
+  // auto-collapses on narrow windows and restores when room returns. On narrow
+  // windows an open inspector overlays the editor as a drawer.
   let collapsed = $state(false);
   let narrow = $state(false);
   let wasNarrow = false;
-  const PANEL_MIN_WIDTH = 900;
 
   // Highlighted while a file is dragged over the window.
   let dragOver = $state(false);
@@ -125,7 +126,7 @@
       onQuit: () => quitApplication()
     }).catch((e) => console.error('Failed to set up app menu:', e));
 
-    const updateNarrow = () => (narrow = window.innerWidth < PANEL_MIN_WIDTH);
+    const updateNarrow = () => (narrow = isNarrowLayout(window.innerWidth));
     updateNarrow();
     window.addEventListener('resize', updateNarrow);
 
@@ -198,7 +199,7 @@
     togglePanel={() => (collapsed = !collapsed)}
   />
 
-  <div class="body" class:no-inspector={collapsed || !store.doc}>
+  <div class="body" class:no-inspector={collapsed || !store.doc} class:narrow>
     <nav class="sidebar">
       {#each sections as s}
         <button
@@ -280,8 +281,10 @@
     display: grid;
     grid-template-columns: 200px minmax(0, 1fr) clamp(380px, 34vw, 520px);
     min-height: 0;
+    position: relative;
   }
-  .body.no-inspector {
+  .body.no-inspector,
+  .body.narrow {
     grid-template-columns: 200px minmax(0, 1fr);
   }
   .sidebar {
@@ -377,6 +380,16 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+  /* Narrow windows: overlay the editor instead of taking a grid column. */
+  .body.narrow .inspector {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(420px, calc(100vw - 200px));
+    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.28);
+    z-index: 10;
   }
   .welcome {
     height: 100%;

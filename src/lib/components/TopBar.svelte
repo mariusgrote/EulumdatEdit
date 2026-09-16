@@ -102,6 +102,7 @@
     border-bottom: 1px solid var(--border);
   }
   .brand {
+    flex: none;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -115,11 +116,18 @@
     letter-spacing: -0.01em;
   }
   .file {
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 8px;
     color: var(--text-dim);
     font-size: 13px;
+  }
+  .filename {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .dot {
     color: var(--accent);
@@ -150,6 +158,7 @@
     stroke-linejoin: round;
   }
   .actions {
+    flex: none;
     margin-left: auto;
     display: flex;
     gap: 6px;
@@ -190,5 +199,13 @@
   }
   .panel-btn.active {
     color: var(--text);
+  }
+  @media (max-width: 1049px) {
+    .topbar {
+      gap: 12px;
+    }
+    .name {
+      display: none;
+    }
   }
 </style>
