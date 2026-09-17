@@ -17,7 +17,8 @@
     findFieldElement,
     resolveWarningTarget,
     warningsBySection,
-    type SectionId
+    type SectionId,
+    type WarningTarget
   } from '$lib/warningNavigation';
   import TopBar from '$lib/components/TopBar.svelte';
   import VisualizationPanel from '$lib/components/VisualizationPanel.svelte';
@@ -26,6 +27,7 @@
   import SectionGeometry from '$lib/components/SectionGeometry.svelte';
   import SectionLamps from '$lib/components/SectionLamps.svelte';
   import SectionIntensity from '$lib/components/SectionIntensity.svelte';
+  import SectionUgr from '$lib/components/SectionUgr.svelte';
 
   const sections = [
     {
@@ -43,10 +45,15 @@
       label: 'Lamps',
       icon: 'M9.5 18h5M10.5 21h3M12 3a6 6 0 0 0-3.5 10.9c.6.5.9 1.1 1 2.1h5c.1-1 .4-1.6 1-2.1A6 6 0 0 0 12 3z'
     },
-    { id: 'intensity', label: 'Intensity', icon: 'M4 4v16h16M8 15l3-4 3 3 4-6' }
+    { id: 'intensity', label: 'Intensity', icon: 'M4 4v16h16M8 15l3-4 3 3 4-6' },
+    {
+      id: 'ugr',
+      label: 'UGR',
+      icon: 'M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12zM12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z'
+    }
   ] as const;
 
-  type ActiveSectionId = SectionId;
+  type ActiveSectionId = SectionId | 'ugr';
   let active = $state<ActiveSectionId>('general');
   let rightView = $state<'diagram' | 'validation'>('diagram');
 
@@ -60,7 +67,11 @@
   // Highlighted while a file is dragged over the window.
   let dragOver = $state(false);
 
-  const sectionWarningCounts = $derived(warningsBySection(store.warnings));
+  const sectionWarningCounts = $derived<Record<ActiveSectionId, number>>({
+    ...warningsBySection(store.warnings),
+    ugr: 0
+  });
+  const ugrBlocked = $derived(store.ugr?.status === 'blocked');
 
   $effect(() => {
     const n = narrow;
@@ -80,11 +91,13 @@
     }
   }
 
-  async function navigateToWarning(warning: Warning) {
-    if (!store.doc) return;
-
+  function navigateToWarning(warning: Warning) {
     const target = resolveWarningTarget(warning);
-    if (!target) return;
+    if (target) navigateToTarget(target);
+  }
+
+  async function navigateToTarget(target: WarningTarget) {
+    if (!store.doc) return;
 
     active = target.section;
 
@@ -216,6 +229,8 @@
             <span class="nav-badge" aria-label="{sectionWarningCounts[s.id]} warnings">
               {sectionWarningCounts[s.id]}
             </span>
+          {:else if s.id === 'ugr' && store.doc && ugrBlocked}
+            <span class="nav-note" title="The UGR tabular method does not apply">n/a</span>
           {/if}
         </button>
       {/each}
@@ -240,6 +255,7 @@
           {#if active === 'geometry'}<SectionGeometry />{/if}
           {#if active === 'lamps'}<SectionLamps />{/if}
           {#if active === 'intensity'}<SectionIntensity />{/if}
+          {#if active === 'ugr'}<SectionUgr onnavigate={navigateToTarget} />{/if}
           {#if store.error}<div class="err card">{store.error}</div>{/if}
         </div>
       {/if}
@@ -360,6 +376,16 @@
     min-width: 18px;
     text-align: center;
     line-height: 18px;
+  }
+  .nav-note {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+    padding: 0 5px;
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    color: var(--text-faint);
   }
   .content {
     overflow-y: auto;

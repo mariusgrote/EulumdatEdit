@@ -5,7 +5,8 @@
 //! values so the round-trip is lossless.
 
 use eulumdat_core::{
-    Distribution, Eulumdat, EulumdatError, LampSet, Symmetry, TypeIndicator, ValidationWarning,
+    Distribution, Eulumdat, EulumdatError, FluxBasis, LampSet, Symmetry, TypeIndicator, UgrBlocker,
+    UgrTable, ValidationWarning, UGR_REFLECTANCES,
 };
 use serde::{Deserialize, Serialize};
 
@@ -88,6 +89,62 @@ pub struct PhotometryDto {
     pub gamma_count: usize,
 }
 
+/// UGR table after the CIE tabular method, or the reasons it does not apply.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum UgrDto {
+    Available(UgrTableDto),
+    Blocked { blockers: Vec<UgrBlockerDto> },
+}
+
+/// A computed UGR table for both flux bases.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UgrTableDto {
+    /// Lamp flux in lm that `lamp_flux_values` refer to.
+    pub lamp_flux: f64,
+    /// `8·log10(Φ / 1000)`, the offset between both flux bases.
+    pub flux_correction: f64,
+    /// Column reflectances as `[ceiling, walls, floor]` fractions.
+    pub reflectances: Vec<[f64; 3]>,
+    /// Values for the lamp flux of the file.
+    pub lamp_flux_values: UgrValuesDto,
+    /// Values for a lamp flux of 1000 lm.
+    pub normalized_values: UgrValuesDto,
+}
+
+/// UGR values for one flux basis. Values are unrounded; `None` marks a cell
+/// without glare contribution.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UgrValuesDto {
+    pub rows: Vec<UgrRowDto>,
+    /// Room 4H × 8H, reflectances 70/50/20.
+    pub data_sheet_crosswise: Option<f64>,
+    pub data_sheet_endwise: Option<f64>,
+}
+
+/// One room of the UGR table.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UgrRowDto {
+    pub x_h: u8,
+    pub y_h: u8,
+    pub crosswise: Vec<Option<f64>>,
+    pub endwise: Vec<Option<f64>>,
+}
+
+/// A reason why the UGR tabular method does not apply.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UgrBlockerDto {
+    pub message: String,
+    /// Form field key of the offending input, as in [`WarningDto`]. `None` for
+    /// blockers caused by the intensity distribution itself.
+    pub field_key: Option<String>,
+    pub lamp_index: Option<usize>,
+}
+
 /// The bundle returned after opening or mutating a document.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -95,6 +152,7 @@ pub struct DocResponse {
     pub doc: EulumdatDto,
     pub warnings: Vec<WarningDto>,
     pub photometry: PhotometryDto,
+    pub ugr: UgrDto,
     pub path: Option<String>,
     pub dirty: bool,
     /// Whether legacy strict text-length validation is currently enabled.
@@ -225,6 +283,67 @@ impl PhotometryDto {
             field_angle_c90_c270: m.field_angle_c90_c270(),
             c_plane_count: m.c_plane_count(),
             gamma_count: m.gamma_count(),
+        }
+    }
+}
+
+impl UgrDto {
+    pub fn from_model(m: &Eulumdat) -> Self {
+        match m.ugr_table() {
+            Ok(table) => Self::Available(UgrTableDto::from(&table)),
+            Err(blockers) => Self::Blocked {
+                blockers: blockers.iter().map(UgrBlockerDto::from).collect(),
+            },
+        }
+    }
+}
+
+impl From<&UgrTable> for UgrTableDto {
+    fn from(table: &UgrTable) -> Self {
+        Self {
+            lamp_flux: table.lamp_flux(),
+            flux_correction: table.flux_correction(),
+            reflectances: UGR_REFLECTANCES
+                .iter()
+                .map(|r| [r.ceiling, r.walls, r.floor])
+                .collect(),
+            lamp_flux_values: UgrValuesDto::new(table, FluxBasis::LampFlux),
+            normalized_values: UgrValuesDto::new(table, FluxBasis::Normalized1000Lm),
+        }
+    }
+}
+
+impl UgrValuesDto {
+    fn new(table: &UgrTable, basis: FluxBasis) -> Self {
+        let (data_sheet_crosswise, data_sheet_endwise) = table.data_sheet_value(basis);
+        Self {
+            rows: table
+                .rows(basis)
+                .map(|row| UgrRowDto {
+                    x_h: row.room.x_h,
+                    y_h: row.room.y_h,
+                    crosswise: row.crosswise.to_vec(),
+                    endwise: row.endwise.to_vec(),
+                })
+                .collect(),
+            data_sheet_crosswise,
+            data_sheet_endwise,
+        }
+    }
+}
+
+impl From<&UgrBlocker> for UgrBlockerDto {
+    fn from(blocker: &UgrBlocker) -> Self {
+        let (field_key, lamp_index) = match blocker {
+            UgrBlocker::NoLuminousArea => (Some("luminousAreaLength"), None),
+            UgrBlocker::NoLampFlux => (Some("totalLuminousFlux"), Some(0)),
+            UgrBlocker::NoLightOutputRatio => (Some("lightOutputRatio"), None),
+            _ => (None, None),
+        };
+        Self {
+            message: blocker.to_string(),
+            field_key: field_key.map(str::to_string),
+            lamp_index,
         }
     }
 }

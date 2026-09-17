@@ -12,7 +12,7 @@ use serde::Deserialize;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, State, WebviewWindow, WebviewWindowBuilder};
 
-use crate::dto::{warnings_to_dto, DocResponse, EulumdatDto, PhotometryDto};
+use crate::dto::{warnings_to_dto, DocResponse, EulumdatDto, PhotometryDto, UgrDto};
 use crate::state::{AppState, OpenDoc};
 
 /// Builds the standard response bundle from the current document.
@@ -35,6 +35,7 @@ fn respond(
         doc: EulumdatDto::from(model),
         warnings: warnings_to_dto(&warnings),
         photometry: PhotometryDto::from_model(model),
+        ugr: UgrDto::from_model(model),
         path,
         dirty,
         strict_validation: strict,
@@ -443,7 +444,7 @@ fn template_model() -> Eulumdat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dto::EulumdatDto;
+    use crate::dto::{EulumdatDto, UgrDto};
     use eulumdat_core::{Eulumdat, ValidationSettings};
 
     #[test]
@@ -463,6 +464,41 @@ mod tests {
         let dto = EulumdatDto::from(&model);
         let rebuilt = dto.to_model().expect("dto should rebuild a model");
         assert_eq!(rebuilt.to_text(), model.to_text());
+    }
+
+    #[test]
+    fn ugr_table_is_available_on_a_fine_angle_grid() {
+        let mut model = template_model();
+        model.resample_gamma(5).expect("template should resample");
+        let UgrDto::Available(table) = UgrDto::from_model(&model) else {
+            panic!("UGR table should apply to the resampled template");
+        };
+        assert_eq!(table.reflectances.len(), 5);
+        assert_eq!(table.lamp_flux_values.rows.len(), 19);
+        assert_eq!(table.lamp_flux_values.rows[10].x_h, 4);
+        assert_eq!(table.lamp_flux_values.rows[10].y_h, 8);
+        assert_eq!(
+            table.lamp_flux_values.data_sheet_crosswise,
+            table.lamp_flux_values.rows[10].crosswise[0]
+        );
+    }
+
+    #[test]
+    fn ugr_blockers_point_to_their_fields() {
+        let mut model = template_model();
+        model.luminous_area_length = 0.0;
+        model.lamps[0].total_luminous_flux = 0.0;
+        let UgrDto::Blocked { blockers } = UgrDto::from_model(&model) else {
+            panic!("UGR table should be blocked");
+        };
+        let keys: Vec<_> = blockers
+            .iter()
+            .map(|b| (b.field_key.as_deref(), b.lamp_index))
+            .collect();
+        assert!(keys.contains(&(Some("luminousAreaLength"), None)));
+        assert!(keys.contains(&(Some("totalLuminousFlux"), Some(0))));
+        // The 10° gamma grid of the template is too coarse; it has no field.
+        assert!(keys.contains(&(None, None)));
     }
 
     #[test]

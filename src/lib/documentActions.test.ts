@@ -28,6 +28,7 @@ function makeResponse(overrides: Partial<DocResponse> = {}): DocResponse {
     doc: { fileName: 'test.ldt' } as EulumdatDoc,
     warnings: [],
     photometry: {} as Photometry,
+    ugr: { status: 'blocked', blockers: [] },
     path: null,
     dirty: true,
     strictValidation: false,

@@ -68,10 +68,44 @@ export interface Photometry {
   gammaCount: number;
 }
 
+/** UGR values for one flux basis. Values are unrounded; null marks a cell without glare. */
+export interface UgrValues {
+  /** One row per standard room, in CIE order. Five values per view, in `reflectances` order. */
+  rows: { xH: number; yH: number; crosswise: (number | null)[]; endwise: (number | null)[] }[];
+  /** Room 4H × 8H, reflectances 70/50/20. */
+  dataSheetCrosswise: number | null;
+  dataSheetEndwise: number | null;
+}
+
+export interface UgrTable {
+  status: 'available';
+  /** Lamp flux in lm that `lampFluxValues` refer to. */
+  lampFlux: number;
+  /** 8·log10(Φ / 1000), the offset between both flux bases. */
+  fluxCorrection: number;
+  /** Column reflectances as [ceiling, walls, floor] fractions. */
+  reflectances: [number, number, number][];
+  lampFluxValues: UgrValues;
+  normalizedValues: UgrValues;
+}
+
+/** A reason why the UGR tabular method does not apply. */
+export interface UgrBlocker {
+  message: string;
+  /** Form field key of the offending input; null when the intensity distribution is the cause. */
+  fieldKey: string | null;
+  lampIndex: number | null;
+}
+
+export type Ugr = UgrTable | { status: 'blocked'; blockers: UgrBlocker[] };
+
+export type UgrFluxBasis = 'lampFlux' | 'normalized';
+
 export interface DocResponse {
   doc: EulumdatDoc;
   warnings: Warning[];
   photometry: Photometry;
+  ugr: Ugr;
   path: string | null;
   dirty: boolean;
   /** Whether legacy strict text-length validation is currently enabled. */

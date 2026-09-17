@@ -3,13 +3,16 @@
 
 import { ask } from '@tauri-apps/plugin-dialog';
 import * as api from './api';
-import type { DocResponse, EulumdatDoc, Photometry, Warning } from './types';
+import type { DocResponse, EulumdatDoc, Photometry, Ugr, UgrFluxBasis, Warning } from './types';
 import { warningsByField } from './warningNavigation';
 
 class DocStore {
   doc = $state<EulumdatDoc | null>(null);
   warnings = $state<Warning[]>([]);
   photometry = $state<Photometry | null>(null);
+  ugr = $state<Ugr | null>(null);
+  /** Flux the UGR table and data sheet value refer to; kept across documents. */
+  ugrFluxBasis = $state<UgrFluxBasis>('lampFlux');
   path = $state<string | null>(null);
   dirty = $state(false);
   busy = $state(false);
@@ -42,6 +45,7 @@ class DocStore {
     if (replaceDoc) this.doc = res.doc;
     this.warnings = res.warnings;
     this.photometry = res.photometry;
+    this.ugr = res.ugr;
     this.path = res.path;
     this.dirty = res.dirty;
     this.strictValidation = res.strictValidation;
@@ -106,6 +110,7 @@ class DocStore {
     this.doc = null;
     this.warnings = [];
     this.photometry = null;
+    this.ugr = null;
     this.path = null;
     this.dirty = false;
     this.error = null;

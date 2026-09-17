@@ -80,6 +80,7 @@ function makeResponse(overrides: Partial<DocResponse> = {}): DocResponse {
     doc: makeDoc(),
     warnings: [],
     photometry: makePhotometry(),
+    ugr: { status: 'blocked', blockers: [] },
     path: '/tmp/test.ldt',
     dirty: false,
     strictValidation: false,
