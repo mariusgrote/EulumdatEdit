@@ -51,6 +51,14 @@ fn with_doc<T>(
     f(docs.entry(window.label().to_string()).or_default())
 }
 
+/// Reads and parses `path`, naming the path in the error so a failed open
+/// shows which file the backend was actually asked for.
+fn load(path: &str) -> Result<Eulumdat, String> {
+    Eulumdat::from_path(path)
+        .map(|(model, _warnings)| model)
+        .map_err(|e| format!("Could not open {path:?}: {e}"))
+}
+
 /// Creates a new luminaire from a built-in default template.
 #[tauri::command]
 pub fn new_from_template(
@@ -73,7 +81,7 @@ pub fn open_file(
     window: WebviewWindow,
     state: State<'_, AppState>,
 ) -> Result<DocResponse, String> {
-    let (model, _warnings) = Eulumdat::from_path(&path).map_err(|e| e.to_string())?;
+    let model = load(&path)?;
     with_doc(&state, &window, |doc| {
         doc.model = Some(model.clone());
         doc.path = Some(path.clone());
@@ -95,7 +103,7 @@ pub async fn open_window(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let model = match &path {
-        Some(path) => Eulumdat::from_path(path).map_err(|e| e.to_string())?.0,
+        Some(path) => load(path)?,
         None => template_model(),
     };
     let strict_validation = with_doc(&state, &window, |doc| Ok(doc.strict_validation))?;
