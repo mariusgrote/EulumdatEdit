@@ -6,9 +6,6 @@
 
 ### Running the app
 - Run everything with a single command: `pnpm tauri dev` (its `beforeDevCommand` auto-starts the Vite dev server on fixed port `1420`; do **not** start `pnpm dev` separately). Standard scripts live in `package.json`.
-- The window needs a display. A desktop session is available on `DISPLAY=:1`; export it before launching (`export DISPLAY=:1`). Run in a tmux/background session since it is long-running.
-- `libEGL warning: DRI3 error ...` lines at startup are harmless software-rendering fallback messages, not failures.
-- The app window title bar is intentionally empty (`tauri.conf.json` sets `"title": ""`); identify the window by its UI, not its title.
 
 ### Lint / test / build (matches `.github/workflows/ci.yml`)
 - Frontend check: `pnpm check` (runs `svelte-kit sync` + `svelte-check`).
