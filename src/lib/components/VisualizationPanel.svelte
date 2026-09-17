@@ -3,6 +3,7 @@
   import { GRAPHS } from '$lib/graphs/registry.svelte';
   import GraphView from '$lib/graphs/GraphView.svelte';
   import { downloadGraph } from '$lib/graphs/export';
+  import { fluxBasisLabel, formatUgr, ugrValues } from '$lib/ugr';
 
   // One persistent state instance per graph type, so switching tabs (or opening
   // the maximize modal, which shares the instance) preserves each graph's
@@ -40,6 +41,8 @@
   }
 
   const p = $derived(store.photometry);
+  const ugrTable = $derived(store.ugr?.status === 'available' ? store.ugr : null);
+  const ugrSheet = $derived(ugrTable ? ugrValues(ugrTable, store.ugrFluxBasis) : null);
   const ActiveControls = $derived(active.Controls);
 </script>
 
@@ -120,6 +123,21 @@
     <div class="stat">
       <span class="k">Field C90/C270</span>
       <span class="v">{fmt(p?.fieldAngleC90C270)}<small> °</small></span>
+    </div>
+    <div class="stat wide" title="Room 4H × 8H, reflectances 70/50/20, crosswise / endwise">
+      <span class="k">
+        UGR 4H × 8H
+        {#if ugrTable}<span class="basis">{fluxBasisLabel(ugrTable, store.ugrFluxBasis)}</span>{/if}
+      </span>
+      {#if ugrSheet}
+        <span class="v">
+          {formatUgr(ugrSheet.dataSheetCrosswise)}<small> crosswise</small>
+          <span class="sep">/</span>
+          {formatUgr(ugrSheet.dataSheetEndwise)}<small> endwise</small>
+        </span>
+      {:else}
+        <span class="v na">n/a<small> tabular method does not apply</small></span>
+      {/if}
     </div>
   </div>
 </div>
@@ -279,6 +297,23 @@
     font-size: 18px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
+  }
+  .stat.wide {
+    grid-column: 1 / -1;
+  }
+  .stat .basis {
+    float: right;
+    text-transform: none;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .sep {
+    margin: 0 6px;
+    font-weight: 400;
+    color: var(--text-faint);
+  }
+  .stat .v.na {
+    color: var(--text-faint);
   }
   .stat .v small {
     font-size: 12px;
