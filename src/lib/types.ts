@@ -120,6 +120,7 @@ export interface PolarOptions {
   showLegend: boolean;
   showAxisLabels: boolean;
   intensityMode: 'stored' | 'converted';
+  presentation: 'classic' | 'focused';
   title: string | null;
 }
 
