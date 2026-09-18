@@ -5,8 +5,8 @@
 //! photometry) so the frontend never has to re-derive anything.
 
 use eulumdat_core::{
-    Eulumdat, IntensityMode, PlanePair, PolarDiagramOptions, Symmetry, TypeIndicator,
-    ValidationSettings,
+    Eulumdat, IntensityMode, PlanePair, PolarDiagramOptions, PolarDiagramPresentation, Symmetry,
+    TypeIndicator, ValidationSettings,
 };
 use serde::Deserialize;
 use std::sync::atomic::Ordering;
@@ -324,6 +324,8 @@ pub struct PolarOptionsDto {
     pub show_axis_labels: bool,
     /// "stored" or "converted".
     pub intensity_mode: String,
+    /// "classic" or "focused".
+    pub presentation: String,
     pub title: Option<String>,
 }
 
@@ -360,6 +362,10 @@ pub fn render_polar_svg(
         "converted" => IntensityMode::ConvertedByFactor,
         _ => IntensityMode::StoredCandelaPerKilolumen,
     };
+    let presentation = match options.presentation.as_str() {
+        "focused" => PolarDiagramPresentation::Focused,
+        _ => PolarDiagramPresentation::Classic,
+    };
 
     let opts = PolarDiagramOptions {
         width: options.width,
@@ -375,6 +381,7 @@ pub fn render_polar_svg(
         show_legend: options.show_legend,
         show_axis_labels: options.show_axis_labels,
         intensity_mode,
+        presentation,
     };
 
     model.to_polar_svg(&opts).map_err(|e| e.to_string())

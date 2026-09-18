@@ -33,16 +33,11 @@ export interface GraphType<S = unknown, O = unknown> {
 // --- Polar luminous-intensity diagram -------------------------------------
 
 export const POLAR_PLANES = [
-  { id: 'c0c180', label: 'C0/C180' },
-  { id: 'c90c270', label: 'C90/C270' },
-  { id: 'c45c225', label: 'C45/C225' },
-  { id: 'c135c315', label: 'C135/C315' }
+  { id: 'c0c180', label: 'C0/C180', color: '#ff6b6b' },
+  { id: 'c90c270', label: 'C90/C270', color: '#7375ff' },
+  { id: 'c45c225', label: 'C45/C225', color: '#2f9e62' },
+  { id: 'c135c315', label: 'C135/C315', color: '#e89032' }
 ] as const;
-
-// Must mirror the palette used by eulumdat-core's polar_svg renderer so the
-// HTML legend swatches match the drawn curves (colors are assigned by index
-// among the *enabled* planes).
-export const POLAR_PALETTE = ['#1f77b4', '#d62728', '#2ca02c', '#9467bd', '#ff7f0e'];
 
 export class PolarState {
   planes = $state<Record<string, boolean>>({
@@ -75,9 +70,10 @@ const polarGraph: GraphType<PolarState, PolarRenderOptions> = {
       height: size,
       planes: opts.planes,
       showGrid: true,
-      showLegend: false,
+      showLegend: true,
       showAxisLabels: true,
       intensityMode: opts.intensityMode,
+      presentation: 'focused',
       title: null
     })
 };

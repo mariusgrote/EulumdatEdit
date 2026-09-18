@@ -1,20 +1,10 @@
 <script lang="ts">
-  import { POLAR_PLANES, POLAR_PALETTE, type PolarState } from './registry.svelte';
+  import { POLAR_PLANES, type PolarState } from './registry.svelte';
 
   interface Props {
     state: PolarState;
   }
   let { state }: Props = $props();
-
-  // plane id -> curve color, indexed by its position among the enabled planes.
-  const colorOf = $derived.by(() => {
-    const map: Record<string, string> = {};
-    let i = 0;
-    for (const p of POLAR_PLANES) {
-      if (state.planes[p.id]) map[p.id] = POLAR_PALETTE[i++ % POLAR_PALETTE.length];
-    }
-    return map;
-  });
 </script>
 
 <div class="controls">
@@ -24,7 +14,7 @@
         <input type="checkbox" bind:checked={state.planes[plane.id]} />
         <span
           class="swatch"
-          style:background={state.planes[plane.id] ? colorOf[plane.id] : 'transparent'}
+          style:background={state.planes[plane.id] ? plane.color : 'transparent'}
         ></span>
         {plane.label}
       </label>
