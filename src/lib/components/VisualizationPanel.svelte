@@ -23,7 +23,7 @@
     downloading = true;
     downloadError = null;
     try {
-      await downloadGraph(active, activeState);
+      await downloadGraph(active, activeState, store.doc?.fileName ?? '');
     } catch (e) {
       downloadError = String(e);
     } finally {

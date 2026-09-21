@@ -18,8 +18,8 @@ import PolarControls from './PolarControls.svelte';
 export interface GraphType<S = unknown, O = unknown> {
   id: string;
   label: string;
-  /** Suggested file basename (no extension) for downloads. */
-  fileBase: string;
+  /** Suffix appended to the document name for downloads. */
+  fileSuffix: string;
   /** Type-specific controls; receives the graph's state instance. */
   Controls: Component<{ state: S }>;
   /** Creates a fresh reactive state instance for this graph. */
@@ -57,7 +57,7 @@ interface PolarRenderOptions {
 const polarGraph: GraphType<PolarState, PolarRenderOptions> = {
   id: 'polar',
   label: 'Polar',
-  fileBase: 'polar-diagram',
+  fileSuffix: 'polar',
   Controls: PolarControls,
   createState: () => new PolarState(),
   toOptions: (s) => ({
