@@ -8,6 +8,11 @@ import type { GraphType } from './registry.svelte';
 /** Resolution (px) graphs are rendered at when exporting. */
 const EXPORT_SIZE = 1200;
 
+export function graphExportDefaultPath(documentFileName: string, graphSuffix: string): string {
+  const documentBase = documentFileName.trim().replace(/\.ldt$/i, '') || 'luminaire';
+  return `${documentBase}-${graphSuffix}.svg`;
+}
+
 /** Rasterizes SVG markup to PNG bytes via an offscreen canvas. */
 function svgToPng(svg: string, size: number): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
@@ -59,10 +64,11 @@ function svgToPng(svg: string, size: number): Promise<Uint8Array> {
  */
 export async function downloadGraph(
   graph: GraphType,
-  state: unknown
+  state: unknown,
+  documentFileName: string
 ): Promise<boolean> {
   const path = await saveDialog({
-    defaultPath: `${graph.fileBase}.svg`,
+    defaultPath: graphExportDefaultPath(documentFileName, graph.fileSuffix),
     filters: [
       { name: 'SVG image', extensions: ['svg'] },
       { name: 'PNG image', extensions: ['png'] }
