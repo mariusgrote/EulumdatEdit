@@ -319,7 +319,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 0 8px 0 11px;
+    padding: 0 31px 0 11px;
     border: 1px solid transparent;
     border-bottom: 0;
     border-radius: 7px 7px 0 0;
@@ -334,10 +334,6 @@
   .tab:hover {
     background: var(--bg-sunken);
     color: var(--text);
-  }
-  .tab:hover,
-  .tab:focus-within {
-    padding-right: 31px;
   }
   .tab.active {
     background: var(--bg);
