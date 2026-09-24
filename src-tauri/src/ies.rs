@@ -45,6 +45,15 @@ fn near(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-6
 }
 
+/// IES numeric data is ASCII, but published metadata may use Windows-1252.
+pub fn parse_bytes(input: &[u8], file_name: &str) -> Result<Eulumdat, String> {
+    if let Ok(text) = std::str::from_utf8(input) {
+        return parse(text, file_name);
+    }
+    let (text, _, _) = encoding_rs::WINDOWS_1252.decode(input);
+    parse(&text, file_name)
+}
+
 pub fn parse(text: &str, file_name: &str) -> Result<Eulumdat, String> {
     let mut lines = text.lines().map(str::trim);
     let first = lines
@@ -187,15 +196,7 @@ pub fn parse(text: &str, file_name: &str) -> Result<Eulumdat, String> {
             {
                 return Err("IES full-circle data needs C0, C90, C180 and C270".into());
             }
-            if rows[0]
-                .iter()
-                .zip(rows.last().unwrap())
-                .any(|(first, last)| !near(*first, *last))
-            {
-                return Err("IES C360 values must match C0 values".into());
-            }
-            rows.pop();
-            horizontal[..horizontal.len() - 1].to_vec()
+            horizontal.clone()
         }
         Symmetry::C90C270 => unreachable!(),
     };
@@ -312,8 +313,13 @@ pub fn serialize(model: &Eulumdat) -> Result<String, String> {
     if indices.is_empty() {
         return Err("No C-planes to export".into());
     }
-    let full_circle = matches!(model.symmetry, Symmetry::None | Symmetry::C90C270);
-    let horizontal_count = indices.len() + usize::from(full_circle);
+    let append_c360 = model.symmetry == Symmetry::C90C270
+        || (model.symmetry == Symmetry::None
+            && model
+                .c_planes
+                .last()
+                .is_some_and(|last| !near(*last, 360.0)));
+    let horizontal_count = indices.len() + usize::from(append_c360);
     let watts: f64 = model
         .lamps
         .iter()
@@ -340,14 +346,14 @@ pub fn serialize(model: &Eulumdat) -> Result<String, String> {
     for index in &indices {
         out.push_str(&format!("{} ", model.c_planes[*index]));
     }
-    if full_circle {
+    if append_c360 {
         out.push_str("360 ");
     }
     out.push('\n');
     let first_row = *stored_indices.first().ok_or("Missing first C-plane row")?;
     for index in stored_indices
         .into_iter()
-        .chain(full_circle.then_some(first_row))
+        .chain(append_c360.then_some(first_row))
     {
         let row = model
             .intensities
@@ -391,20 +397,30 @@ mod tests {
     }
 
     #[test]
-    fn imports_absolute_full_circle_and_omits_duplicate_c360() {
+    fn imports_absolute_full_circle_and_preserves_c360() {
         let input = fixture(
             "0 90 180 270 360",
             5,
-            "100 50 10 200 80 20 300 90 30 400 100 40 100 50 10",
+            "100 50 10 200 80 20 300 90 30 400 100 40 101 51 11",
             "-1",
         );
         let model = parse(&input, "full.ies").unwrap();
         assert_eq!(model.symmetry, Symmetry::None);
-        assert_eq!(model.c_planes, vec![0.0, 90.0, 180.0, 270.0]);
-        assert_eq!(model.intensities.len(), 4);
+        assert_eq!(model.c_planes, vec![0.0, 90.0, 180.0, 270.0, 360.0]);
+        assert_eq!(model.intensities.len(), 5);
+        assert_ne!(model.intensities[0], model.intensities[4]);
         let exported = serialize(&model).unwrap();
         let reparsed = parse(&exported, "again.ies").unwrap();
         assert_eq!(reparsed.intensities, model.intensities);
+    }
+
+    #[test]
+    fn imports_windows_1252_metadata() {
+        let text =
+            fixture("0 90", 2, "100 50 10 200 80 20", "1000").replace("Test lamp", "Lampe °");
+        let (bytes, _, _) = encoding_rs::WINDOWS_1252.encode(&text);
+        let model = parse_bytes(&bytes, "lamp.ies").unwrap();
+        assert_eq!(model.luminaire_name, "Lampe °");
     }
 
     #[test]
@@ -468,5 +484,75 @@ mod tests {
         assert_eq!(reparsed.intensities[1][0], 200.0);
         assert_eq!(reparsed.intensities[2][0], 100.0);
         assert_eq!(reparsed.intensities[3][0], 300.0);
+    }
+
+    /// Optional compatibility check for downloaded IES files kept outside the
+    /// repository. Set IES_QA_DIR to a directory of Type C, TILT=NONE files.
+    #[test]
+    #[ignore = "requires external IES samples via IES_QA_DIR"]
+    fn external_ies_files_keep_candela_after_export() {
+        let directory = std::env::var("IES_QA_DIR").expect("set IES_QA_DIR to a sample directory");
+        let mut paths: Vec<_> = std::fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("ies"))
+            })
+            .collect();
+        paths.sort();
+        assert!(!paths.is_empty(), "IES_QA_DIR contains no IES files");
+        for path in paths {
+            let bytes = std::fs::read(&path).unwrap();
+            let name = path.file_name().unwrap().to_string_lossy();
+            let model =
+                parse_bytes(&bytes, &name).unwrap_or_else(|error| panic!("{path:?}: {error}"));
+            let (ldt, _) = Eulumdat::parse(&model.to_text())
+                .unwrap_or_else(|error| panic!("{path:?}: LDT conversion failed: {error}"));
+            assert_eq!(model.c_planes, ldt.c_planes, "{path:?}");
+            assert_eq!(model.gamma_angles, ldt.gamma_angles, "{path:?}");
+            assert_eq!(model.intensities, ldt.intensities, "{path:?}");
+            let exported = serialize(&model).unwrap_or_else(|error| panic!("{path:?}: {error}"));
+            let reparsed =
+                parse(&exported, &name).unwrap_or_else(|error| panic!("{path:?}: {error}"));
+            assert_eq!(model.c_planes, reparsed.c_planes, "{path:?}");
+            assert_eq!(model.gamma_angles, reparsed.gamma_angles, "{path:?}");
+            assert_eq!(
+                model.intensities.len(),
+                reparsed.intensities.len(),
+                "{path:?}"
+            );
+            assert!(
+                model
+                    .intensities
+                    .iter()
+                    .zip(&reparsed.intensities)
+                    .all(|(a, b)| a.len() == b.len()),
+                "{path:?}"
+            );
+            let original_flux: f64 = model
+                .lamps
+                .iter()
+                .map(|lamp| lamp.total_luminous_flux)
+                .sum();
+            let exported_flux: f64 = reparsed
+                .lamps
+                .iter()
+                .map(|lamp| lamp.total_luminous_flux)
+                .sum();
+            for (original, exported) in model
+                .intensities
+                .iter()
+                .flatten()
+                .zip(reparsed.intensities.iter().flatten())
+            {
+                let before = original * original_flux * model.conversion_factor / 1000.0;
+                let after = exported * exported_flux * reparsed.conversion_factor / 1000.0;
+                assert!(
+                    (before - after).abs() <= before.abs().max(1.0) * 1e-6,
+                    "{path:?}: candela changed from {before} to {after}"
+                );
+            }
+        }
     }
 }

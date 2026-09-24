@@ -164,10 +164,11 @@ fn load(path: &str) -> Result<(Eulumdat, String), String> {
         std::fs::canonicalize(path).map_err(|e| format!("Could not open {path:?}: {e}"))?;
     let model = match file_format(&canonical)? {
         "ies" => {
-            let contents = std::fs::read_to_string(&canonical)
-                .map_err(|e| format!("Could not open {path:?}: {e}"))?;
+            let contents =
+                std::fs::read(&canonical).map_err(|e| format!("Could not open {path:?}: {e}"))?;
             let name = canonical.file_name().unwrap_or_default().to_string_lossy();
-            ies::parse(&contents, &name).map_err(|e| format!("Could not open {path:?}: {e}"))?
+            ies::parse_bytes(&contents, &name)
+                .map_err(|e| format!("Could not open {path:?}: {e}"))?
         }
         _ => Eulumdat::from_path(&canonical)
             .map(|(model, _warnings)| model)

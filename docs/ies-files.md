@@ -7,3 +7,7 @@ IES import accepts LM-63 1986, 1991, 1995, 2002, and 2019 headers with Type C ph
 IES export uses LM-63-2002 Type C absolute photometry (`-1` lumens per lamp). It converts the current cd/klm grid and lamp flux back to candela. The exported file carries the luminaire name and manufacturer field. Other IES keywords have no matching fields in the EULUMDAT editor and are not retained when an imported IES file is saved.
 
 IES width, length, and height describe the luminous area. Import leaves the EULUMDAT luminaire housing dimensions at zero because IES does not provide them. Enter housing dimensions before saving an imported file as LDT.
+
+Import accepts UTF-8 and Windows-1252 metadata. Full-circle files retain their C360 row, even if its measured values differ from C0. Export adds C360 only when the model does not already contain it.
+
+For compatibility checks with downloaded manufacturer files, place supported `.ies` samples in a local directory and run `IES_QA_DIR=/path/to/samples cargo test external_ies_files_keep_candela_after_export -- --ignored` from `src-tauri/`. The external samples used during development came from the [eulumdat-rs test files](https://github.com/holg/eulumdat-rs/tree/main/tests/files); they are not bundled in this repository.
