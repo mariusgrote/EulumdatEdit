@@ -11,6 +11,10 @@ export function openFile(path: string): Promise<WindowStateResponse> {
   return invoke('open_file', { path });
 }
 
+export function reloadDocument(): Promise<DocResponse> {
+  return invoke('reload_document');
+}
+
 /** The active document and ordered tabs for this window. */
 export function currentDocument(): Promise<WindowStateResponse> {
   return invoke('current_document');

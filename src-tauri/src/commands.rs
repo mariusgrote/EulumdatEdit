@@ -249,6 +249,25 @@ pub fn open_file(
     )
 }
 
+/// Reloads the active tab from disk, discarding its in-memory edits.
+#[tauri::command]
+pub fn reload_document(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<DocResponse, String> {
+    with_doc(&state, &window, |doc| {
+        let path = doc
+            .path
+            .clone()
+            .ok_or_else(|| "No file path set".to_string())?;
+        let (model, _) = load(&path)?;
+        let response = respond(&model, Some(path), false, doc.strict_validation)?;
+        doc.model = Some(model);
+        doc.dirty = false;
+        Ok(response)
+    })
+}
+
 fn active_strict_validation(state: &AppState, window_label: &str) -> bool {
     let workspace = state.workspace.lock().unwrap();
     workspace

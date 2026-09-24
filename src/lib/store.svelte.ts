@@ -150,6 +150,7 @@ class DocStore {
   async close(tabId = this.activeTabId) {
     if (!tabId) return;
     if (tabId === this.activeTabId) this.#cancelPendingCommit();
+    else if (!(await this.flushEdits())) return;
     const res = await this.#run(async () => {
       return api.closeDocument(tabId);
     });
@@ -173,7 +174,9 @@ class DocStore {
    *  No-op for an unsaved (pathless) document. */
   async revert() {
     if (!this.path) return;
-    await this.open(this.path);
+    this.#cancelPendingCommit();
+    const res = await this.#run(() => api.reloadDocument());
+    if (res) this.#apply(res, true);
   }
 
   async save() {

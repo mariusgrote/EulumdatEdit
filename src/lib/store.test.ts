@@ -4,6 +4,7 @@ import type { DocResponse, EulumdatDoc, Photometry, WindowStateResponse } from '
 vi.mock('./api', () => ({
   newFromTemplate: vi.fn(),
   openFile: vi.fn(),
+  reloadDocument: vi.fn(),
   currentDocument: vi.fn(),
   closeDocument: vi.fn(),
   updateDocument: vi.fn(),
@@ -258,6 +259,20 @@ describe('failed flush', () => {
 });
 
 describe('document replacement preserves the pending edit', () => {
+  it('revert() reloads the active tab without committing its draft', async () => {
+    vi.mocked(api.reloadDocument).mockResolvedValue(makeResponse());
+    editLuminaireName('Discard me');
+
+    await store.revert();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(api.reloadDocument).toHaveBeenCalledOnce();
+    expect(api.openFile).not.toHaveBeenCalled();
+    expect(api.updateDocument).not.toHaveBeenCalled();
+    expect(store.doc?.luminaireName).toBe('Luminaire');
+    expect(store.dirty).toBe(false);
+  });
+
   it('open() commits the current tab before opening another', async () => {
     editLuminaireName('Stale');
     vi.mocked(api.openFile).mockResolvedValue(makeWindowResponse());
@@ -317,6 +332,22 @@ describe('document replacement preserves the pending edit', () => {
     expect(api.closeDocument).toHaveBeenCalledTimes(1);
     expect(api.updateDocument).not.toHaveBeenCalled();
     expect(store.doc).toBeNull();
+  });
+
+  it('close() commits an active draft before closing another tab', async () => {
+    store.tabs.push({ id: 'tab-2', title: 'other.ldt', path: '/tmp/other.ldt', dirty: false });
+    vi.mocked(api.closeDocument).mockImplementation(async () =>
+      makeWindowResponse({ doc: { ...makeDoc(), luminaireName: 'Keep me' }, dirty: true })
+    );
+    editLuminaireName('Keep me');
+
+    await store.close('tab-2');
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(api.updateDocument).toHaveBeenCalledOnce();
+    expect(order(vi.mocked(api.updateDocument))).toBeLessThan(order(vi.mocked(api.closeDocument)));
+    expect(store.doc?.luminaireName).toBe('Keep me');
+    expect(store.dirty).toBe(true);
   });
 
   it('close() cancels the timer even while the close IPC is still running', async () => {
