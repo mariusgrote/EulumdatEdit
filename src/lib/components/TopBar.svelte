@@ -49,6 +49,16 @@
     dragging: boolean;
   };
   let tabDrag = $state<TabDrag | null>(null);
+  let dropIndex = $state<number | null>(null);
+
+  function tabInsertionIndex(clientX: number): number {
+    const tabs = [...document.querySelectorAll<HTMLElement>('[data-tab-id]')];
+    const index = tabs.findIndex((tab) => {
+      const rect = tab.getBoundingClientRect();
+      return clientX < rect.left + rect.width / 2;
+    });
+    return index === -1 ? tabs.length : index;
+  }
 
   function onTabPointerDown(event: PointerEvent, tabId: string) {
     if (event.button !== 0) return;
@@ -68,12 +78,18 @@
     if (Math.hypot(event.screenX - tabDrag.startX, event.screenY - tabDrag.startY) > 6) {
       tabDrag.dragging = true;
     }
+    if (!tabDrag.dragging) return;
+    const strip = document.querySelector<HTMLElement>('.tabs')?.getBoundingClientRect();
+    dropIndex = strip && event.clientY >= strip.top && event.clientY <= strip.bottom
+      ? tabInsertionIndex(event.clientX)
+      : null;
   }
 
   async function onTabPointerUp(event: PointerEvent) {
     if (!tabDrag || event.pointerId !== tabDrag.pointerId) return;
     const drag = tabDrag;
     tabDrag = null;
+    dropIndex = null;
     if (!drag.dragging) {
       await store.activateTab(drag.tabId);
       return;
@@ -96,16 +112,7 @@
       event.screenY <= currentBounds.bottom;
 
     if (insideCurrent) {
-      const tabs = [...document.querySelectorAll<HTMLElement>('[data-tab-id]')];
-      const targetIndex = tabs.findIndex((tab) => {
-        const rect = tab.getBoundingClientRect();
-        return event.clientX < rect.left + rect.width / 2;
-      });
-      await store.moveTab(
-        drag.tabId,
-        current.label,
-        targetIndex === -1 ? tabs.length : targetIndex
-      );
+      await store.moveTab(drag.tabId, current.label, tabInsertionIndex(event.clientX));
       return;
     }
 
@@ -140,11 +147,12 @@
   </div>
 
   <div class="tabs" data-tauri-drag-region>
-    {#each store.tabs as tab (tab.id)}
+    {#each store.tabs as tab, index (tab.id)}
       <div
         class="tab"
         class:active={tab.id === store.activeTabId}
         class:dragging={tabDrag?.tabId === tab.id && tabDrag.dragging}
+        class:drop-before={tabDrag?.dragging && dropIndex === index && tabDrag.tabId !== tab.id}
         data-tab-id={tab.id}
         title={tab.path || tab.title}
         role="tab"
@@ -155,7 +163,10 @@
         onpointerdown={(event) => onTabPointerDown(event, tab.id)}
         onpointermove={onTabPointerMove}
         onpointerup={onTabPointerUp}
-        onpointercancel={() => (tabDrag = null)}
+        onpointercancel={() => {
+          tabDrag = null;
+          dropIndex = null;
+        }}
         onkeydown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') store.activateTab(tab.id);
         }}
@@ -174,7 +185,11 @@
         >×</button>
       </div>
     {/each}
-    <div class="title-drag-space" data-tauri-drag-region></div>
+    <div
+      class="title-drag-space"
+      class:drop-end={tabDrag?.dragging && dropIndex === store.tabs.length}
+      data-tauri-drag-region
+    ></div>
   </div>
 
   <div class="actions">
@@ -279,7 +294,8 @@
     color: var(--text-dim);
     font-size: 13px;
     user-select: none;
-    cursor: default;
+    cursor: grab;
+    position: relative;
   }
   .tab:hover {
     background: var(--bg-sunken);
@@ -292,6 +308,18 @@
   }
   .tab.dragging {
     opacity: 0.55;
+    cursor: grabbing;
+  }
+  .tab.drop-before::before,
+  .title-drag-space.drop-end::before {
+    content: '';
+    position: absolute;
+    left: -3px;
+    top: 5px;
+    bottom: 5px;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--accent);
   }
   .tab:focus-visible {
     outline: 2px solid var(--accent);
@@ -337,6 +365,7 @@
   .title-drag-space {
     flex: 1 0 18px;
     align-self: stretch;
+    position: relative;
   }
   .revert {
     display: inline-flex;
