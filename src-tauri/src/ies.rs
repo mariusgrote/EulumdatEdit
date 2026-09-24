@@ -211,8 +211,6 @@ pub fn parse(text: &str, file_name: &str) -> Result<Eulumdat, String> {
             name
         },
         file_name: file_name.to_string(),
-        luminaire_length: length,
-        luminaire_width: width,
         luminous_area_length: length,
         luminous_area_width: width,
         luminous_area_height_c0: height,
@@ -383,6 +381,9 @@ mod tests {
         assert_eq!(model.c_planes, vec![0.0, 90.0, 180.0, 270.0]);
         assert_eq!(model.intensities[1][0], 200.0);
         assert_eq!(model.luminous_area_length, 400.0);
+        assert_eq!(model.luminous_area_width, 200.0);
+        assert_eq!(model.luminaire_length, 0.0);
+        assert_eq!(model.luminaire_width, 0.0);
         let exported = serialize(&model).unwrap();
         let reparsed = parse(&exported, "copy.ies").unwrap();
         assert_eq!(reparsed.intensities, model.intensities);
