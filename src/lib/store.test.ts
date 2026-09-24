@@ -1,9 +1,10 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DocResponse, EulumdatDoc, Photometry } from './types';
+import type { DocResponse, EulumdatDoc, Photometry, WindowStateResponse } from './types';
 
 vi.mock('./api', () => ({
   newFromTemplate: vi.fn(),
   openFile: vi.fn(),
+  currentDocument: vi.fn(),
   closeDocument: vi.fn(),
   updateDocument: vi.fn(),
   save: vi.fn(),
@@ -88,8 +89,26 @@ function makeResponse(overrides: Partial<DocResponse> = {}): DocResponse {
   };
 }
 
+function makeWindowResponse(overrides: Partial<DocResponse> = {}): WindowStateResponse {
+  const document = makeResponse(overrides);
+  return {
+    document,
+    tabs: [
+      {
+        id: 'tab-1',
+        title: document.path?.split('/').pop() || 'Untitled',
+        path: document.path,
+        dirty: document.dirty
+      }
+    ],
+    activeTabId: 'tab-1'
+  };
+}
+
+const emptyWindow = (): WindowStateResponse => ({ document: null, tabs: [], activeTabId: null });
+
 async function openDoc() {
-  vi.mocked(api.openFile).mockResolvedValue(makeResponse());
+  vi.mocked(api.openFile).mockResolvedValue(makeWindowResponse());
   await store.open('/tmp/test.ldt');
 }
 
@@ -113,14 +132,15 @@ beforeEach(async () => {
   vi.mocked(api.resampleGamma).mockResolvedValue(makeResponse({ dirty: true }));
   vi.mocked(api.scaleTo100Percent).mockResolvedValue(makeResponse({ dirty: true }));
   vi.mocked(api.setStrictValidation).mockResolvedValue(makeResponse({ strictValidation: true }));
-  vi.mocked(api.newFromTemplate).mockResolvedValue(makeResponse({ path: null }));
-  vi.mocked(api.closeDocument).mockResolvedValue(undefined);
+  vi.mocked(api.newFromTemplate).mockResolvedValue(makeWindowResponse({ path: null }));
+  vi.mocked(api.currentDocument).mockResolvedValue(makeWindowResponse());
+  vi.mocked(api.closeDocument).mockResolvedValue(emptyWindow());
   await openDoc();
   vi.clearAllMocks();
 });
 
 afterEach(async () => {
-  vi.mocked(api.closeDocument).mockResolvedValue(undefined);
+  vi.mocked(api.closeDocument).mockResolvedValue(emptyWindow());
   await store.close();
   vi.clearAllTimers();
   vi.resetAllMocks();
@@ -141,6 +161,7 @@ describe('debounced commit', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(api.updateDocument).toHaveBeenCalledTimes(1);
     expect(vi.mocked(api.updateDocument).mock.calls[0][0].luminaireName).toBe('AB');
+    expect(vi.mocked(api.updateDocument).mock.calls[0][1]).toBe('tab-1');
   });
 });
 
@@ -236,19 +257,20 @@ describe('failed flush', () => {
   });
 });
 
-describe('document replacement cancels the pending commit', () => {
-  it('open() cancels the timer before opening', async () => {
+describe('document replacement preserves the pending edit', () => {
+  it('open() commits the current tab before opening another', async () => {
     editLuminaireName('Stale');
-    vi.mocked(api.openFile).mockResolvedValue(makeResponse());
+    vi.mocked(api.openFile).mockResolvedValue(makeWindowResponse());
     await store.open('/tmp/next.ldt');
 
     await vi.advanceTimersByTimeAsync(1000);
-    expect(api.updateDocument).not.toHaveBeenCalled();
+    expect(api.updateDocument).toHaveBeenCalledOnce();
+    expect(order(vi.mocked(api.updateDocument))).toBeLessThan(order(vi.mocked(api.openFile)));
   });
 
   it('open() cancels the timer even while the open IPC is still running', async () => {
     editLuminaireName('Stale');
-    let resolveOpen: (res: DocResponse) => void = () => {};
+    let resolveOpen: (res: WindowStateResponse) => void = () => {};
     vi.mocked(api.openFile).mockReturnValue(
       new Promise((resolve) => {
         resolveOpen = resolve;
@@ -257,19 +279,34 @@ describe('document replacement cancels the pending commit', () => {
     const opening = store.open('/tmp/next.ldt');
 
     await vi.advanceTimersByTimeAsync(1000);
-    expect(api.updateDocument).not.toHaveBeenCalled();
+    expect(api.updateDocument).toHaveBeenCalledOnce();
 
-    resolveOpen(makeResponse());
+    resolveOpen(makeWindowResponse());
     await opening;
   });
 
-  it('newDoc() cancels the timer', async () => {
+  it('newDoc() commits the current tab first', async () => {
     editLuminaireName('Stale');
     await store.newDoc();
 
     await vi.advanceTimersByTimeAsync(1000);
     expect(api.newFromTemplate).toHaveBeenCalledTimes(1);
-    expect(api.updateDocument).not.toHaveBeenCalled();
+    expect(api.updateDocument).toHaveBeenCalledOnce();
+    expect(order(vi.mocked(api.updateDocument))).toBeLessThan(
+      order(vi.mocked(api.newFromTemplate))
+    );
+  });
+
+  it('loadCurrent() commits the previously active tab before applying a window event', async () => {
+    editLuminaireName('Preserved across window event');
+
+    await store.loadCurrent();
+
+    expect(api.updateDocument).toHaveBeenCalledOnce();
+    expect(vi.mocked(api.updateDocument).mock.calls[0][1]).toBe('tab-1');
+    expect(order(vi.mocked(api.updateDocument))).toBeLessThan(
+      order(vi.mocked(api.currentDocument))
+    );
   });
 
   it('close() cancels the timer', async () => {
@@ -284,7 +321,7 @@ describe('document replacement cancels the pending commit', () => {
 
   it('close() cancels the timer even while the close IPC is still running', async () => {
     editLuminaireName('Stale');
-    let resolveClose: () => void = () => {};
+    let resolveClose: (res: WindowStateResponse) => void = () => {};
     vi.mocked(api.closeDocument).mockReturnValue(
       new Promise((resolve) => {
         resolveClose = resolve;
@@ -295,7 +332,7 @@ describe('document replacement cancels the pending commit', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(api.updateDocument).not.toHaveBeenCalled();
 
-    resolveClose();
+    resolveClose(emptyWindow());
     await closing;
   });
 });

@@ -112,6 +112,19 @@ export interface DocResponse {
   strictValidation: boolean;
 }
 
+export interface TabSummary {
+  id: string;
+  title: string;
+  path: string | null;
+  dirty: boolean;
+}
+
+export interface WindowStateResponse {
+  document: DocResponse | null;
+  tabs: TabSummary[];
+  activeTabId: string | null;
+}
+
 export interface PolarOptions {
   width: number;
   height: number;

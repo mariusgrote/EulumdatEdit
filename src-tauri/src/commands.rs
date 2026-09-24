@@ -8,12 +8,30 @@ use eulumdat_core::{
     Eulumdat, IntensityMode, PlanePair, PolarDiagramOptions, PolarDiagramPresentation, Symmetry,
     TypeIndicator, ValidationSettings,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
-use tauri::{AppHandle, State, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow, WebviewWindowBuilder};
 
 use crate::dto::{warnings_to_dto, DocResponse, EulumdatDto, PhotometryDto, UgrDto};
-use crate::state::{AppState, OpenDoc};
+use crate::state::{AppState, OpenDoc, Workspace};
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TabSummary {
+    pub id: String,
+    pub title: String,
+    pub path: Option<String>,
+    pub dirty: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowStateResponse {
+    pub document: Option<DocResponse>,
+    pub tabs: Vec<TabSummary>,
+    pub active_tab_id: Option<String>,
+}
 
 /// Builds the standard response bundle from the current document.
 ///
@@ -42,77 +60,86 @@ fn respond(
     })
 }
 
-/// Runs `f` on the document shown in `window`, creating an empty one on first use.
+fn active_doc_id(workspace: &Workspace, window_label: &str) -> Result<String, String> {
+    workspace
+        .windows
+        .get(window_label)
+        .and_then(|window| window.active.clone())
+        .ok_or_else(|| "No document open".to_string())
+}
+
+/// Runs `f` on the active document shown in `window`.
 fn with_doc<T>(
     state: &AppState,
     window: &WebviewWindow,
     f: impl FnOnce(&mut OpenDoc) -> Result<T, String>,
 ) -> Result<T, String> {
-    let mut docs = state.docs.lock().unwrap();
-    f(docs.entry(window.label().to_string()).or_default())
+    let mut workspace = state.workspace.lock().unwrap();
+    let id = active_doc_id(&workspace, window.label())?;
+    let doc = workspace
+        .docs
+        .get_mut(&id)
+        .ok_or_else(|| "Active document is missing".to_string())?;
+    f(doc)
 }
 
-/// Reads and parses `path`, naming the path in the error so a failed open
-/// shows which file the backend was actually asked for.
-fn load(path: &str) -> Result<Eulumdat, String> {
-    Eulumdat::from_path(path)
-        .map(|(model, _warnings)| model)
-        .map_err(|e| format!("Could not open {path:?}: {e}"))
+fn tab_title(doc: &OpenDoc) -> String {
+    doc.path
+        .as_deref()
+        .and_then(|path| Path::new(path).file_name())
+        .and_then(|name| name.to_str())
+        .unwrap_or("Untitled")
+        .to_string()
 }
 
-/// Creates a new luminaire from a built-in default template.
-#[tauri::command]
-pub fn new_from_template(
-    window: WebviewWindow,
-    state: State<'_, AppState>,
-) -> Result<DocResponse, String> {
-    let model = template_model();
-    with_doc(&state, &window, |doc| {
-        doc.model = Some(model.clone());
-        doc.path = None;
-        doc.dirty = false;
-        respond(&model, None, false, doc.strict_validation)
-    })
-}
-
-/// Opens and parses a `.ldt` file from disk.
-#[tauri::command]
-pub fn open_file(
-    path: String,
-    window: WebviewWindow,
-    state: State<'_, AppState>,
-) -> Result<DocResponse, String> {
-    let model = load(&path)?;
-    with_doc(&state, &window, |doc| {
-        doc.model = Some(model.clone());
-        doc.path = Some(path.clone());
-        doc.dirty = false;
-        respond(&model, Some(path), false, doc.strict_validation)
-    })
-}
-
-/// Opens `path` (or a new template document when `None`) in a new window.
-///
-/// Parse errors are returned to the calling window before any window is
-/// created. Async because creating a window from a sync command deadlocks on
-/// Windows.
-#[tauri::command]
-pub async fn open_window(
-    path: Option<String>,
-    window: WebviewWindow,
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    let model = match &path {
-        Some(path) => load(path)?,
-        None => template_model(),
+fn window_state(workspace: &Workspace, window_label: &str) -> Result<WindowStateResponse, String> {
+    let Some(window) = workspace.windows.get(window_label) else {
+        return Ok(WindowStateResponse {
+            document: None,
+            tabs: Vec::new(),
+            active_tab_id: None,
+        });
     };
-    let strict_validation = with_doc(&state, &window, |doc| Ok(doc.strict_validation))?;
+    let tabs = window
+        .tabs
+        .iter()
+        .filter_map(|id| {
+            workspace.docs.get(id).map(|doc| TabSummary {
+                id: id.clone(),
+                title: tab_title(doc),
+                path: doc.path.clone(),
+                dirty: doc.dirty,
+            })
+        })
+        .collect();
+    let document = window
+        .active
+        .as_ref()
+        .and_then(|id| workspace.docs.get(id))
+        .and_then(|doc| {
+            doc.model
+                .as_ref()
+                .map(|model| respond(model, doc.path.clone(), doc.dirty, doc.strict_validation))
+        })
+        .transpose()?;
+    Ok(WindowStateResponse {
+        document,
+        tabs,
+        active_tab_id: window.active.clone(),
+    })
+}
 
-    let id = state.next_window_id.fetch_add(1, Ordering::SeqCst);
-    let label = format!("doc-{id}");
-    state.docs.lock().unwrap().insert(
-        label.clone(),
+fn insert_document(
+    state: &AppState,
+    window_label: &str,
+    model: Eulumdat,
+    path: Option<String>,
+    strict_validation: bool,
+) -> Result<WindowStateResponse, String> {
+    let id = format!("tab-{}", state.next_doc_id.fetch_add(1, Ordering::SeqCst));
+    let mut workspace = state.workspace.lock().unwrap();
+    workspace.docs.insert(
+        id.clone(),
         OpenDoc {
             model: Some(model),
             path,
@@ -120,16 +147,119 @@ pub async fn open_window(
             strict_validation,
         },
     );
-
-    let built = build_window(&app, &window, &label);
-    if built.is_err() {
-        state.docs.lock().unwrap().remove(&label);
-    }
-    built.map_err(|e| e.to_string())
+    let window = workspace
+        .windows
+        .entry(window_label.to_string())
+        .or_default();
+    window.tabs.push(id.clone());
+    window.active = Some(id);
+    window_state(&workspace, window_label)
 }
 
-/// Creates a window like the configured main one, cascaded from `parent`.
-fn build_window(app: &AppHandle, parent: &WebviewWindow, label: &str) -> tauri::Result<()> {
+/// Reads and parses `path`, naming the path in the error so a failed open
+/// shows which file the backend was actually asked for.
+fn load(path: &str) -> Result<(Eulumdat, String), String> {
+    let canonical =
+        std::fs::canonicalize(path).map_err(|e| format!("Could not open {path:?}: {e}"))?;
+    Eulumdat::from_path(&canonical)
+        .map(|(model, _warnings)| (model, canonical.to_string_lossy().into_owned()))
+        .map_err(|e| format!("Could not open {path:?}: {e}"))
+}
+
+fn canonical_destination(path: &str) -> Result<String, String> {
+    let candidate = PathBuf::from(path);
+    if candidate.exists() {
+        return std::fs::canonicalize(&candidate)
+            .map(|path| path.to_string_lossy().into_owned())
+            .map_err(|error| format!("Could not resolve {path:?}: {error}"));
+    }
+    let file_name = candidate
+        .file_name()
+        .ok_or_else(|| "Save path has no file name".to_string())?;
+    let parent = candidate
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let parent = std::fs::canonicalize(parent)
+        .map_err(|error| format!("Could not resolve {path:?}: {error}"))?;
+    Ok(parent.join(file_name).to_string_lossy().into_owned())
+}
+
+/// Creates a new luminaire from a built-in default template.
+#[tauri::command]
+pub fn new_from_template(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<WindowStateResponse, String> {
+    let strict_validation = active_strict_validation(&state, window.label());
+    insert_document(
+        &state,
+        window.label(),
+        template_model(),
+        None,
+        strict_validation,
+    )
+}
+
+/// Opens and parses a `.ldt` file from disk.
+#[tauri::command]
+pub fn open_file(
+    path: String,
+    window: WebviewWindow,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<WindowStateResponse, String> {
+    let (model, canonical_path) = load(&path)?;
+
+    let existing = {
+        let workspace = state.workspace.lock().unwrap();
+        workspace
+            .docs
+            .iter()
+            .find(|(_, doc)| doc.path.as_deref() == Some(canonical_path.as_str()))
+            .and_then(|(id, _)| {
+                workspace.windows.iter().find_map(|(label, tabs)| {
+                    tabs.tabs.contains(id).then(|| (label.clone(), id.clone()))
+                })
+            })
+    };
+    if let Some((label, id)) = existing {
+        let response = {
+            let mut workspace = state.workspace.lock().unwrap();
+            if let Some(tabs) = workspace.windows.get_mut(&label) {
+                tabs.active = Some(id);
+            }
+            window_state(&workspace, window.label())?
+        };
+        if let Some(existing_window) = app.get_webview_window(&label) {
+            let _ = existing_window.unminimize();
+            let _ = existing_window.set_focus();
+            let _ = existing_window.emit("workspace-changed", ());
+        }
+        return Ok(response);
+    }
+
+    let strict_validation = active_strict_validation(&state, window.label());
+    insert_document(
+        &state,
+        window.label(),
+        model,
+        Some(canonical_path),
+        strict_validation,
+    )
+}
+
+fn active_strict_validation(state: &AppState, window_label: &str) -> bool {
+    let workspace = state.workspace.lock().unwrap();
+    workspace
+        .windows
+        .get(window_label)
+        .and_then(|window| window.active.as_ref())
+        .and_then(|id| workspace.docs.get(id))
+        .is_some_and(|doc| doc.strict_validation)
+}
+
+fn build_window_at(app: &AppHandle, label: &str, x: f64, y: f64) -> tauri::Result<()> {
     let mut config = app
         .config()
         .app
@@ -138,46 +268,271 @@ fn build_window(app: &AppHandle, parent: &WebviewWindow, label: &str) -> tauri::
         .cloned()
         .unwrap_or_default();
     config.label = label.to_string();
-    let mut builder = WebviewWindowBuilder::from_config(app, &config)?;
-    if let (Ok(pos), Ok(scale)) = (parent.outer_position(), parent.scale_factor()) {
-        let pos = pos.to_logical::<f64>(scale);
-        builder = builder.position(pos.x + 28.0, pos.y + 28.0);
-    }
-    builder.build()?;
+    WebviewWindowBuilder::from_config(app, &config)?
+        .position(x, y)
+        .build()?;
     Ok(())
 }
 
-/// Returns the document already loaded for this window, if any. A window
-/// created by [`open_window`] starts with its document in place.
+pub fn open_empty_window(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let id = state.next_window_id.fetch_add(1, Ordering::SeqCst);
+    let label = format!("doc-{id}");
+    let mut config = app
+        .config()
+        .app
+        .windows
+        .first()
+        .cloned()
+        .unwrap_or_default();
+    config.label = label;
+    WebviewWindowBuilder::from_config(app, &config)
+        .and_then(|builder| builder.build())
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+pub fn open_new_document_window(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let window_id = state.next_window_id.fetch_add(1, Ordering::SeqCst);
+    let label = format!("doc-{window_id}");
+    insert_document(&state, &label, template_model(), None, false)?;
+
+    let mut config = app
+        .config()
+        .app
+        .windows
+        .first()
+        .cloned()
+        .unwrap_or_default();
+    config.label = label.clone();
+    let built = WebviewWindowBuilder::from_config(app, &config).and_then(|builder| builder.build());
+    if let Err(error) = built {
+        remove_window(&state, &label);
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
+pub fn open_path_window(app: &AppHandle, path: &Path) -> Result<(), String> {
+    let (model, canonical_path) = load(&path.to_string_lossy())?;
+    let state = app.state::<AppState>();
+    let window_id = state.next_window_id.fetch_add(1, Ordering::SeqCst);
+    let label = format!("doc-{window_id}");
+    insert_document(&state, &label, model, Some(canonical_path), false)?;
+
+    let mut config = app
+        .config()
+        .app
+        .windows
+        .first()
+        .cloned()
+        .unwrap_or_default();
+    config.label = label.clone();
+    let built = WebviewWindowBuilder::from_config(app, &config).and_then(|builder| builder.build());
+    if let Err(error) = built {
+        remove_window(&state, &label);
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
+/// Returns the active document and ordered tabs for this window.
 #[tauri::command]
 pub fn current_document(
     window: WebviewWindow,
     state: State<'_, AppState>,
-) -> Result<Option<DocResponse>, String> {
-    with_doc(&state, &window, |doc| match &doc.model {
-        Some(model) => respond(model, doc.path.clone(), doc.dirty, doc.strict_validation).map(Some),
-        None => Ok(None),
-    })
+) -> Result<WindowStateResponse, String> {
+    let mut workspace = state.workspace.lock().unwrap();
+    workspace
+        .windows
+        .entry(window.label().to_string())
+        .or_default();
+    window_state(&workspace, window.label())
 }
 
-/// Clears this window's document and returns it to the empty state.
+/// Closes a tab and activates its right-hand neighbour, or its left-hand
+/// neighbour when it was last in the row.
 #[tauri::command]
-pub fn close_document(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
-    with_doc(&state, &window, |doc| {
-        *doc = OpenDoc::default();
-        Ok(())
-    })
-}
-
-/// Whether any window other than the calling one holds unsaved changes.
-#[tauri::command]
-pub fn other_windows_dirty(window: WebviewWindow, state: State<'_, AppState>) -> bool {
-    state
-        .docs
-        .lock()
-        .unwrap()
+pub fn close_document(
+    tab_id: Option<String>,
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<WindowStateResponse, String> {
+    let mut workspace = state.workspace.lock().unwrap();
+    let id = tab_id
+        .or_else(|| {
+            workspace
+                .windows
+                .get(window.label())
+                .and_then(|tabs| tabs.active.clone())
+        })
+        .ok_or_else(|| "No document open".to_string())?;
+    let tabs = workspace
+        .windows
+        .get_mut(window.label())
+        .ok_or_else(|| "Window is missing".to_string())?;
+    let index = tabs
+        .tabs
         .iter()
-        .any(|(label, doc)| label != window.label() && doc.dirty)
+        .position(|candidate| candidate == &id)
+        .ok_or_else(|| "Tab does not belong to this window".to_string())?;
+    tabs.tabs.remove(index);
+    if tabs.active.as_deref() == Some(&id) {
+        tabs.active = tabs
+            .tabs
+            .get(index)
+            .or_else(|| index.checked_sub(1).and_then(|i| tabs.tabs.get(i)))
+            .cloned();
+    }
+    workspace.docs.remove(&id);
+    window_state(&workspace, window.label())
+}
+
+#[tauri::command]
+pub fn activate_tab(
+    tab_id: String,
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<WindowStateResponse, String> {
+    let mut workspace = state.workspace.lock().unwrap();
+    let tabs = workspace
+        .windows
+        .get_mut(window.label())
+        .ok_or_else(|| "Window is missing".to_string())?;
+    if !tabs.tabs.contains(&tab_id) {
+        return Err("Tab does not belong to this window".to_string());
+    }
+    tabs.active = Some(tab_id);
+    window_state(&workspace, window.label())
+}
+
+fn move_tab_in_workspace(
+    workspace: &mut Workspace,
+    tab_id: &str,
+    source_label: &str,
+    target_label: &str,
+    target_index: Option<usize>,
+) -> Result<(), String> {
+    let source = workspace
+        .windows
+        .get_mut(source_label)
+        .ok_or_else(|| "Source window is missing".to_string())?;
+    let source_index = source
+        .tabs
+        .iter()
+        .position(|id| id == tab_id)
+        .ok_or_else(|| "Tab does not belong to the source window".to_string())?;
+    let target_index = target_index.map(|index| {
+        if source_label == target_label && index > source_index {
+            index - 1
+        } else {
+            index
+        }
+    });
+    source.tabs.remove(source_index);
+    if source.active.as_deref() == Some(tab_id) {
+        source.active = source
+            .tabs
+            .get(source_index)
+            .or_else(|| {
+                source_index
+                    .checked_sub(1)
+                    .and_then(|index| source.tabs.get(index))
+            })
+            .cloned();
+    }
+
+    let target = workspace
+        .windows
+        .entry(target_label.to_string())
+        .or_default();
+    let index = target_index
+        .unwrap_or(target.tabs.len())
+        .min(target.tabs.len());
+    target.tabs.insert(index, tab_id.to_string());
+    target.active = Some(tab_id.to_string());
+    Ok(())
+}
+
+#[tauri::command]
+pub fn move_tab(
+    tab_id: String,
+    target_window: String,
+    target_index: Option<usize>,
+    window: WebviewWindow,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<WindowStateResponse, String> {
+    let source_label = window.label().to_string();
+    let response = {
+        let mut workspace = state.workspace.lock().unwrap();
+        move_tab_in_workspace(
+            &mut workspace,
+            &tab_id,
+            &source_label,
+            &target_window,
+            target_index,
+        )?;
+        window_state(&workspace, &source_label)?
+    };
+    if let Some(target) = app.get_webview_window(&target_window) {
+        let _ = target.set_focus();
+        let _ = target.emit("workspace-changed", ());
+    }
+    Ok(response)
+}
+
+#[tauri::command]
+pub async fn detach_tab(
+    tab_id: String,
+    x: f64,
+    y: f64,
+    window: WebviewWindow,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<WindowStateResponse, String> {
+    let source_label = window.label().to_string();
+    let id = state.next_window_id.fetch_add(1, Ordering::SeqCst);
+    let target_label = format!("doc-{id}");
+    {
+        let mut workspace = state.workspace.lock().unwrap();
+        move_tab_in_workspace(&mut workspace, &tab_id, &source_label, &target_label, None)?;
+    }
+
+    let built = build_window_at(&app, &target_label, x, y);
+    if let Err(error) = built {
+        let mut workspace = state.workspace.lock().unwrap();
+        let _ = move_tab_in_workspace(&mut workspace, &tab_id, &target_label, &source_label, None);
+        workspace.windows.remove(&target_label);
+        return Err(error.to_string());
+    }
+
+    let workspace = state.workspace.lock().unwrap();
+    window_state(&workspace, &source_label)
+}
+
+pub fn remove_window(state: &AppState, label: &str) {
+    let mut workspace = state.workspace.lock().unwrap();
+    if let Some(window) = workspace.windows.remove(label) {
+        for id in window.tabs {
+            workspace.docs.remove(&id);
+        }
+    }
+}
+
+/// Whether any document other than the calling window's active tab is dirty.
+#[tauri::command]
+pub fn other_documents_dirty(window: WebviewWindow, state: State<'_, AppState>) -> bool {
+    let workspace = state.workspace.lock().unwrap();
+    let active = workspace
+        .windows
+        .get(window.label())
+        .and_then(|tabs| tabs.active.as_deref());
+    workspace
+        .docs
+        .iter()
+        .any(|(id, doc)| Some(id.as_str()) != active && doc.dirty)
 }
 
 /// Exits the application unconditionally.
@@ -203,20 +558,31 @@ pub fn take_pending_open(state: State<'_, AppState>) -> Option<String> {
 #[tauri::command]
 pub fn update_document(
     doc: EulumdatDto,
+    tab_id: String,
     window: WebviewWindow,
     state: State<'_, AppState>,
 ) -> Result<DocResponse, String> {
     let model = doc.to_model().map_err(|e| e.to_string())?;
-    with_doc(&state, &window, |state_doc| {
-        state_doc.model = Some(model.clone());
-        state_doc.dirty = true;
-        respond(
-            &model,
-            state_doc.path.clone(),
-            true,
-            state_doc.strict_validation,
-        )
-    })
+    let mut workspace = state.workspace.lock().unwrap();
+    let belongs_to_window = workspace
+        .windows
+        .get(window.label())
+        .is_some_and(|tabs| tabs.tabs.contains(&tab_id));
+    if !belongs_to_window {
+        return Err("Tab does not belong to this window".to_string());
+    }
+    let state_doc = workspace
+        .docs
+        .get_mut(&tab_id)
+        .ok_or_else(|| "Document is missing".to_string())?;
+    state_doc.model = Some(model.clone());
+    state_doc.dirty = true;
+    respond(
+        &model,
+        state_doc.path.clone(),
+        true,
+        state_doc.strict_validation,
+    )
 }
 
 /// Saves the current model to its existing path.
@@ -244,16 +610,28 @@ pub fn save_as(
     window: WebviewWindow,
     state: State<'_, AppState>,
 ) -> Result<DocResponse, String> {
-    with_doc(&state, &window, |doc| {
-        let model = doc
-            .model
-            .clone()
-            .ok_or_else(|| "No document open".to_string())?;
-        model.write_path(&path).map_err(|e| e.to_string())?;
-        doc.path = Some(path.clone());
-        doc.dirty = false;
-        respond(&model, Some(path), false, doc.strict_validation)
-    })
+    let canonical_path = canonical_destination(&path)?;
+    let mut workspace = state.workspace.lock().unwrap();
+    let id = active_doc_id(&workspace, window.label())?;
+    if workspace.docs.iter().any(|(other_id, doc)| {
+        other_id != &id && doc.path.as_deref() == Some(canonical_path.as_str())
+    }) {
+        return Err("This file is already open in another tab".to_string());
+    }
+    let doc = workspace
+        .docs
+        .get_mut(&id)
+        .ok_or_else(|| "No document open".to_string())?;
+    let model = doc
+        .model
+        .clone()
+        .ok_or_else(|| "No document open".to_string())?;
+    model
+        .write_path(&canonical_path)
+        .map_err(|e| e.to_string())?;
+    doc.path = Some(canonical_path.clone());
+    doc.dirty = false;
+    respond(&model, Some(canonical_path), false, doc.strict_validation)
 }
 
 /// Resamples the gamma table to a new angular step.
@@ -346,9 +724,11 @@ pub fn render_polar_svg(
     window: WebviewWindow,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let docs = state.docs.lock().unwrap();
-    let model = docs
-        .get(window.label())
+    let workspace = state.workspace.lock().unwrap();
+    let id = active_doc_id(&workspace, window.label())?;
+    let model = workspace
+        .docs
+        .get(&id)
         .and_then(|doc| doc.model.as_ref())
         .ok_or_else(|| "No document open".to_string())?;
 
@@ -523,6 +903,49 @@ mod tests {
             .to_polar_svg(&PolarDiagramOptions::default())
             .expect("polar svg should render");
         assert!(svg.contains("<svg"));
+    }
+
+    #[test]
+    fn moving_active_tab_selects_neighbour_and_activates_destination() {
+        let mut workspace = Workspace::default();
+        workspace.windows.insert(
+            "source".to_string(),
+            crate::state::WindowTabs {
+                tabs: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+                active: Some("b".to_string()),
+            },
+        );
+        workspace.windows.insert(
+            "target".to_string(),
+            crate::state::WindowTabs {
+                tabs: vec!["d".to_string()],
+                active: Some("d".to_string()),
+            },
+        );
+
+        move_tab_in_workspace(&mut workspace, "b", "source", "target", Some(0)).unwrap();
+
+        assert_eq!(workspace.windows["source"].tabs, ["a", "c"]);
+        assert_eq!(workspace.windows["source"].active.as_deref(), Some("c"));
+        assert_eq!(workspace.windows["target"].tabs, ["b", "d"]);
+        assert_eq!(workspace.windows["target"].active.as_deref(), Some("b"));
+    }
+
+    #[test]
+    fn reordering_within_one_window_keeps_exactly_one_copy() {
+        let mut workspace = Workspace::default();
+        workspace.windows.insert(
+            "main".to_string(),
+            crate::state::WindowTabs {
+                tabs: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+                active: Some("a".to_string()),
+            },
+        );
+
+        move_tab_in_workspace(&mut workspace, "a", "main", "main", Some(3)).unwrap();
+
+        assert_eq!(workspace.windows["main"].tabs, ["b", "c", "a"]);
+        assert_eq!(workspace.windows["main"].active.as_deref(), Some("a"));
     }
 
     /// Runs `eulumdat-core`'s validator on a model that trips every warning and

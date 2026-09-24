@@ -1,4 +1,4 @@
-//! Application state: one open document per window plus editor metadata.
+//! Application state: documents are independent from the windows that show them.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32};
@@ -19,11 +19,27 @@ pub struct OpenDoc {
     pub strict_validation: bool,
 }
 
+/// The ordered tabs shown by one native window.
+#[derive(Debug, Default)]
+pub struct WindowTabs {
+    pub tabs: Vec<String>,
+    pub active: Option<String>,
+}
+
+/// All document and window relationships guarded by one lock so moving a tab
+/// can never leave it in two windows, or in none.
+#[derive(Debug, Default)]
+pub struct Workspace {
+    pub docs: HashMap<String, OpenDoc>,
+    pub windows: HashMap<String, WindowTabs>,
+}
+
 /// Shared, mutex-guarded application state.
 #[derive(Debug, Default)]
 pub struct AppState {
-    /// Open documents keyed by the label of the window showing them.
-    pub docs: Mutex<HashMap<String, OpenDoc>>,
+    pub workspace: Mutex<Workspace>,
+    /// Source of unique document/tab ids.
+    pub next_doc_id: AtomicU32,
     /// Source of unique labels for windows opened after `main`.
     pub next_window_id: AtomicU32,
     /// A file the OS asked us to open (file association / `open with`) before

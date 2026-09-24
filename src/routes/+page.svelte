@@ -119,9 +119,9 @@
   onMount(() => {
     const appWindow = getCurrentWebviewWindow();
     const unlisten = appWindow.onCloseRequested(async (event) => {
-      if (!(await store.confirmDiscardChanges())) {
-        event.preventDefault();
-      }
+      if (!store.tabs.some((tab) => tab.dirty)) return;
+      event.preventDefault();
+      if (await store.confirmCloseWindow()) await appWindow.destroy();
     });
 
     // macOS app menu items, sent by the backend to the focused window.
@@ -129,6 +129,7 @@
       new: newDocument,
       open: openFileDialog,
       close: onCloseShortcut,
+      'close-window': () => appWindow.close(),
       quit: quitApplication
     };
     const unlistenMenu = appWindow.listen<string>('menu', (e) => menuActions[e.payload]?.());
@@ -156,7 +157,8 @@
     // UI was ready, plus a live event for opens while the app is running. Drain
     // the queue only once the listener exists so no open falls between the two.
     const unlistenOpen = appWindow.listen<string>('open-file', (e) => openPath(e.payload));
-    Promise.all([unlistenOpen, store.loadCurrent()])
+    const unlistenWorkspace = appWindow.listen('workspace-changed', () => store.loadCurrent());
+    Promise.all([unlistenOpen, unlistenWorkspace, store.loadCurrent()])
       .then(() => api.takePendingOpen())
       .then((path) => {
         if (path) openPath(path);
@@ -166,6 +168,7 @@
       unlisten.then((fn) => fn());
       unlistenDrop.then((fn) => fn());
       unlistenOpen.then((fn) => fn());
+      unlistenWorkspace.then((fn) => fn());
       unlistenMenu.then((fn) => fn());
       window.removeEventListener('resize', updateNarrow);
     };
@@ -174,11 +177,7 @@
   const isLdt = (p: string) => p.toLowerCase().endsWith('.ldt');
 
   async function onCloseShortcut() {
-    if (store.doc) {
-      await closeDocument();
-    } else {
-      await getCurrentWebviewWindow().close();
-    }
+    await closeDocument();
   }
 
   function onKey(e: KeyboardEvent) {
@@ -196,7 +195,8 @@
       newDocument();
     } else if (k === 'w') {
       e.preventDefault();
-      onCloseShortcut();
+      if (e.shiftKey) getCurrentWebviewWindow().close();
+      else onCloseShortcut();
     }
   }
 </script>

@@ -32,10 +32,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::new_from_template,
             commands::open_file,
-            commands::open_window,
             commands::current_document,
             commands::close_document,
-            commands::other_windows_dirty,
+            commands::activate_tab,
+            commands::move_tab,
+            commands::detach_tab,
+            commands::other_documents_dirty,
             commands::quit_app,
             commands::take_pending_open,
             commands::update_document,
@@ -50,11 +52,11 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 let state = window.state::<AppState>();
-                state.docs.lock().unwrap().remove(window.label());
+                commands::remove_window(&state, window.label());
             }
         })
         .on_menu_event(|app, event| {
-            // Menu items act on the focused window, which owns the document.
+            // Menu items act on the focused window and its active tab.
             if let Some(window) = open_request::target_window(app) {
                 let _ = app.emit_to(
                     tauri::EventTarget::webview_window(window.label()),
@@ -63,6 +65,8 @@ pub fn run() {
                 );
             } else if event.id() == "quit" {
                 app.exit(0);
+            } else if event.id() == "new" {
+                let _ = commands::open_new_document_window(app);
             }
         })
         .setup(|_app| {
@@ -82,6 +86,15 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } = _event
+            {
+                let _ = commands::open_empty_window(_app);
+            }
+
             // macOS/iOS/Android deliver file-association / "Open with" requests here.
             #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
             if let tauri::RunEvent::Opened { urls } = _event {

@@ -15,7 +15,7 @@ use crate::state::AppState;
 
 /// Hands `path` to the frontend: live via an `open-file` event to one window
 /// once the UI is listening, otherwise queued for `take_pending_open`. The
-/// receiving window opens it in place when empty, or in a new window.
+/// receiving window opens it in a tab, or focuses its existing tab.
 pub fn deliver(app: &AppHandle, path: &Path) {
     let path = path.to_string_lossy().into_owned();
     let state = app.state::<AppState>();
@@ -27,6 +27,8 @@ pub fn deliver(app: &AppHandle, path: &Path) {
             "open-file",
             &path,
         );
+    } else {
+        let _ = crate::commands::open_path_window(app, Path::new(&path));
     }
 }
 
