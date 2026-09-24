@@ -43,9 +43,16 @@
 
   type TabDrag = {
     tabId: string;
+    title: string;
+    dirty: boolean;
     pointerId: number;
     startX: number;
     startY: number;
+    clientX: number;
+    clientY: number;
+    offsetX: number;
+    offsetY: number;
+    width: number;
     dragging: boolean;
   };
   let tabDrag = $state<TabDrag | null>(null);
@@ -62,23 +69,38 @@
 
   function onTabPointerDown(event: PointerEvent, tabId: string) {
     if (event.button !== 0) return;
+    event.preventDefault();
     const target = event.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    const tab = store.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
     target.setPointerCapture(event.pointerId);
     tabDrag = {
       tabId,
+      title: tab.title,
+      dirty: tab.dirty,
       pointerId: event.pointerId,
       startX: event.screenX,
       startY: event.screenY,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      width: rect.width,
       dragging: false
     };
   }
 
   function onTabPointerMove(event: PointerEvent) {
     if (!tabDrag || event.pointerId !== tabDrag.pointerId) return;
+    event.preventDefault();
     if (Math.hypot(event.screenX - tabDrag.startX, event.screenY - tabDrag.startY) > 6) {
+      if (!tabDrag.dragging) window.getSelection()?.removeAllRanges();
       tabDrag.dragging = true;
     }
     if (!tabDrag.dragging) return;
+    tabDrag.clientX = event.clientX;
+    tabDrag.clientY = event.clientY;
     const strip = document.querySelector<HTMLElement>('.tabs')?.getBoundingClientRect();
     dropIndex = strip && event.clientY >= strip.top && event.clientY <= strip.bottom
       ? tabInsertionIndex(event.clientX)
@@ -192,6 +214,19 @@
     ></div>
   </div>
 
+  {#if tabDrag?.dragging}
+    <div
+      class="tab-preview"
+      style:left={`${tabDrag.clientX - tabDrag.offsetX}px`}
+      style:top={`${tabDrag.clientY - tabDrag.offsetY}px`}
+      style:width={`${tabDrag.width}px`}
+      aria-hidden="true"
+    >
+      <span class="filename">{displayTitle(tabDrag.title)}</span>
+      {#if tabDrag.dirty}<span class="dot">●</span>{/if}
+    </div>
+  {/if}
+
   <div class="actions">
     {#if store.dirty && store.path}
       <button
@@ -274,6 +309,8 @@
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none;
+    user-select: none;
+    -webkit-user-select: none;
   }
   .tabs::-webkit-scrollbar {
     display: none;
@@ -294,6 +331,8 @@
     color: var(--text-dim);
     font-size: 13px;
     user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
     cursor: grab;
     position: relative;
   }
@@ -307,8 +346,27 @@
     color: var(--text);
   }
   .tab.dragging {
-    opacity: 0.55;
+    opacity: 0.25;
     cursor: grabbing;
+  }
+  .tab-preview {
+    position: fixed;
+    z-index: 100;
+    height: 35px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 30px 0 11px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--bg);
+    color: var(--text);
+    box-shadow: 0 5px 16px rgb(0 0 0 / 22%);
+    font-size: 13px;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
   }
   .tab.drop-before::before,
   .title-drag-space.drop-end::before {
