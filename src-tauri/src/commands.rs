@@ -184,11 +184,22 @@ fn file_format(path: &Path) -> Result<&str, String> {
     }
 }
 
-fn write_document(model: &Eulumdat, path: &Path) -> Result<(), String> {
+/// Writes a document and returns the model that opening the written file
+/// would produce. IES omits EULUMDAT-only fields and uses an absolute flux
+/// basis, so the editor must show the saved representation after writing it.
+fn write_document(model: &Eulumdat, path: &Path) -> Result<Eulumdat, String> {
     match file_format(path)? {
-        "ies" => std::fs::write(path, ies::serialize(model)?)
-            .map_err(|e| format!("Could not write {path:?}: {e}")),
-        _ => model.write_path(path).map_err(|e| e.to_string()),
+        "ies" => {
+            let text = ies::serialize(model)?;
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            let saved = ies::parse(&text, &name)?;
+            std::fs::write(path, text).map_err(|e| format!("Could not write {path:?}: {e}"))?;
+            Ok(saved)
+        }
+        _ => {
+            model.write_path(path).map_err(|e| e.to_string())?;
+            Ok(model.clone())
+        }
     }
 }
 
@@ -643,9 +654,10 @@ pub fn save(window: WebviewWindow, state: State<'_, AppState>) -> Result<DocResp
             .model
             .clone()
             .ok_or_else(|| "No document open".to_string())?;
-        write_document(&model, Path::new(&path))?;
+        let saved = write_document(&model, Path::new(&path))?;
+        doc.model = Some(saved.clone());
         doc.dirty = false;
-        respond(&model, Some(path), false, doc.strict_validation)
+        respond(&saved, Some(path), false, doc.strict_validation)
     })
 }
 
@@ -672,10 +684,11 @@ pub fn save_as(
         .model
         .clone()
         .ok_or_else(|| "No document open".to_string())?;
-    write_document(&model, Path::new(&canonical_path))?;
+    let saved = write_document(&model, Path::new(&canonical_path))?;
+    doc.model = Some(saved.clone());
     doc.path = Some(canonical_path.clone());
     doc.dirty = false;
-    respond(&model, Some(canonical_path), false, doc.strict_validation)
+    respond(&saved, Some(canonical_path), false, doc.strict_validation)
 }
 
 /// Writes an IES copy without changing the document's path or dirty state.
@@ -703,7 +716,7 @@ pub fn export_ies(
         .get(&id)
         .and_then(|doc| doc.model.as_ref())
         .ok_or("No document open")?;
-    write_document(model, Path::new(&destination))
+    write_document(model, Path::new(&destination)).map(|_| ())
 }
 
 /// Resamples the gamma table to a new angular step.
@@ -928,10 +941,13 @@ mod tests {
     #[test]
     fn ies_file_round_trips_through_file_commands() {
         let path = temp_export_path("round-trip.ies");
-        let model = template_model();
-        write_document(&model, &path).expect("IES file should be written");
+        let mut model = template_model();
+        model.lamps[0].total_luminous_flux = 2000.0;
+        let saved = write_document(&model, &path).expect("IES file should be written");
         let (reloaded, _) = load(&path.to_string_lossy()).expect("IES file should open");
-        assert_eq!(reloaded.intensities, model.intensities);
+        assert_eq!(saved, reloaded);
+        assert_eq!(saved.lamps[0].total_luminous_flux, 1000.0);
+        assert_ne!(saved.intensities, model.intensities);
         std::fs::remove_file(path).unwrap();
     }
 
