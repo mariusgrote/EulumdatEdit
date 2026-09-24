@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { flip } from 'svelte/animate';
+  import { slide } from 'svelte/transition';
   import { store } from '$lib/store.svelte';
   import {
     newDocument,
@@ -30,6 +32,14 @@
   }
 
   const warnCount = $derived(store.warnings.length);
+
+  function displayTitle(title: string): string {
+    if (title.length <= 32) return title;
+    return `${title.slice(0, 18)}…${title.slice(-11)}`;
+  }
+
+  const motionDuration = () =>
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 170;
 
   type TabDrag = {
     tabId: string;
@@ -140,6 +150,8 @@
         role="tab"
         tabindex="0"
         aria-selected={tab.id === store.activeTabId}
+        animate:flip={{ duration: motionDuration }}
+        out:slide={{ axis: 'x', duration: motionDuration() }}
         onpointerdown={(event) => onTabPointerDown(event, tab.id)}
         onpointermove={onTabPointerMove}
         onpointerup={onTabPointerUp}
@@ -148,7 +160,7 @@
           if (event.key === 'Enter' || event.key === ' ') store.activateTab(tab.id);
         }}
       >
-        <span class="filename">{tab.title}</span>
+        <span class="filename">{displayTitle(tab.title)}</span>
         {#if tab.dirty}<span class="dot" title="Unsaved changes">●</span>{/if}
         <button
           class="tab-close"
@@ -252,9 +264,9 @@
     display: none;
   }
   .tab {
-    flex: 0 1 180px;
-    min-width: 92px;
-    max-width: 220px;
+    flex: 0 1 250px;
+    min-width: 150px;
+    max-width: 300px;
     align-self: end;
     height: 35px;
     display: flex;
@@ -310,6 +322,13 @@
     color: var(--text-faint);
     font-size: 16px;
     line-height: 1;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .tab:hover .tab-close,
+  .tab:focus-within .tab-close {
+    opacity: 1;
+    pointer-events: auto;
   }
   .tab-close:hover {
     background: var(--sel);
