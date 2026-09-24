@@ -13,6 +13,7 @@ vi.mock('./api', () => ({
   updateDocument: vi.fn(),
   save: vi.fn(),
   saveAs: vi.fn(),
+  exportIes: vi.fn(),
   resampleGamma: vi.fn(),
   scaleTo100Percent: vi.fn(),
   setStrictValidation: vi.fn()
@@ -143,6 +144,7 @@ beforeEach(async () => {
   );
   vi.mocked(api.save).mockResolvedValue(makeResponse());
   vi.mocked(api.saveAs).mockResolvedValue(makeResponse({ path: '/tmp/other.ldt' }));
+  vi.mocked(api.exportIes).mockResolvedValue(undefined);
   vi.mocked(api.resampleGamma).mockResolvedValue(makeResponse({ dirty: true }));
   vi.mocked(api.scaleTo100Percent).mockResolvedValue(makeResponse({ dirty: true }));
   vi.mocked(api.setStrictValidation).mockResolvedValue(makeResponse({ strictValidation: true }));
@@ -282,6 +284,16 @@ describe('flush before backend model operations', () => {
     expect(order(vi.mocked(api.updateDocument))).toBeLessThan(order(vi.mocked(api.saveAs)));
     await vi.advanceTimersByTimeAsync(1000);
     expect(api.updateDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('exportIes() includes a pending edit and keeps the document dirty', async () => {
+    editLuminaireName('Exported name');
+    await store.exportIes('/tmp/copy.ies');
+
+    expect(vi.mocked(api.updateDocument).mock.calls[0][0].luminaireName).toBe('Exported name');
+    expect(order(vi.mocked(api.updateDocument))).toBeLessThan(order(vi.mocked(api.exportIes)));
+    expect(store.path).toBe('/tmp/test.ldt');
+    expect(store.dirty).toBe(true);
   });
 
   it('resampleGamma() and scaleTo100() commit the pending edit first', async () => {

@@ -14,6 +14,10 @@ describe('graphExportDefaultPath', () => {
     expect(graphExportDefaultPath('fixture.LDT', 'polar')).toBe('fixture-polar.svg');
   });
 
+  it('removes the IES extension case-insensitively', () => {
+    expect(graphExportDefaultPath('fixture.IES', 'polar')).toBe('fixture-polar.svg');
+  });
+
   it('keeps document names without an LDT extension', () => {
     expect(graphExportDefaultPath('fixture', 'polar')).toBe('fixture-polar.svg');
   });

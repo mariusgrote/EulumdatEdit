@@ -56,17 +56,17 @@ pub fn focus_window(app: &AppHandle) -> Option<WebviewWindow> {
     Some(window)
 }
 
-/// Whether `path` has a `.ldt` extension (case-insensitive).
-pub fn is_ldt(path: &Path) -> bool {
+/// Whether `path` has a `.ldt` or `.ies` extension (case-insensitive).
+pub fn is_photometric(path: &Path) -> bool {
     path.extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("ldt"))
+        .is_some_and(|e| e.eq_ignore_ascii_case("ldt") || e.eq_ignore_ascii_case("ies"))
 }
 
-/// Finds the first `.ldt` file among launch arguments, skipping the
+/// Finds the first photometric file among launch arguments, skipping the
 /// executable path. Relative paths are resolved against `cwd`, the working
 /// directory of the process that received them.
 #[cfg_attr(target_os = "macos", allow(dead_code))]
-pub fn ldt_path_from_args<I, S>(args: I, cwd: &Path) -> Option<PathBuf>
+pub fn photometric_path_from_args<I, S>(args: I, cwd: &Path) -> Option<PathBuf>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -74,7 +74,7 @@ where
     args.into_iter()
         .skip(1)
         .map(|a| PathBuf::from(a.as_ref()))
-        .find(|p| is_ldt(p))
+        .find(|p| is_photometric(p))
         .map(|p| if p.is_absolute() { p } else { cwd.join(p) })
 }
 
@@ -85,7 +85,7 @@ mod tests {
     #[test]
     fn skips_the_executable_path() {
         let args = ["/opt/app/weird.ldt"];
-        assert_eq!(ldt_path_from_args(args, Path::new("/")), None);
+        assert_eq!(photometric_path_from_args(args, Path::new("/")), None);
     }
 
     #[test]
@@ -99,19 +99,34 @@ mod tests {
             first.to_string_lossy().into_owned(),
             second.to_string_lossy().into_owned(),
         ];
-        assert_eq!(ldt_path_from_args(args, Path::new("/")), Some(first));
+        assert_eq!(
+            photometric_path_from_args(args, Path::new("/")),
+            Some(first)
+        );
     }
 
     #[test]
     fn resolves_relative_paths_against_cwd() {
         let cwd = std::env::current_dir().unwrap();
         let args = ["app", "lamp.ldt"];
-        assert_eq!(ldt_path_from_args(args, &cwd), Some(cwd.join("lamp.ldt")));
+        assert_eq!(
+            photometric_path_from_args(args, &cwd),
+            Some(cwd.join("lamp.ldt"))
+        );
     }
 
     #[test]
-    fn ignores_non_ldt_arguments() {
+    fn accepts_ies_files_case_insensitively() {
+        let args = ["app", "lamp.IES"];
+        assert_eq!(
+            photometric_path_from_args(args, Path::new("/tmp")),
+            Some(PathBuf::from("/tmp/lamp.IES"))
+        );
+    }
+
+    #[test]
+    fn ignores_non_photometric_arguments() {
         let args = ["app", "notes.txt", "ldt"];
-        assert_eq!(ldt_path_from_args(args, Path::new("/")), None);
+        assert_eq!(photometric_path_from_args(args, Path::new("/")), None);
     }
 }
