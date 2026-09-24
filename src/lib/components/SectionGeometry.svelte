@@ -9,13 +9,10 @@
 
 <div class="card">
   <h3>Luminaire dimensions</h3>
-  {#if openedFromIes}
-    <p class="format-hint">IES files specify the luminous area, not the luminaire housing size. Enter housing dimensions before saving as LDT.</p>
-  {/if}
   <div class="grid-3">
-    <NumberField fieldKey="luminaireLength" label="Length / diameter" unit="mm" bind:value={doc.luminaireLength} onedit={edit} />
-    <NumberField fieldKey="luminaireWidth" label="Width" unit="mm" bind:value={doc.luminaireWidth} onedit={edit} />
-    <NumberField fieldKey="luminaireHeight" label="Height" unit="mm" bind:value={doc.luminaireHeight} onedit={edit} />
+    <NumberField fieldKey="luminaireLength" label="Length / diameter" unit="mm" sourceNote={openedFromIes ? 'Not in IES' : undefined} bind:value={doc.luminaireLength} onedit={edit} />
+    <NumberField fieldKey="luminaireWidth" label="Width" unit="mm" sourceNote={openedFromIes ? 'Not in IES' : undefined} bind:value={doc.luminaireWidth} onedit={edit} />
+    <NumberField fieldKey="luminaireHeight" label="Height" unit="mm" sourceNote={openedFromIes ? 'Not in IES' : undefined} bind:value={doc.luminaireHeight} onedit={edit} />
   </div>
 </div>
 
@@ -42,11 +39,3 @@
     <NumberField fieldKey="tilt" label="Tilt" unit="°" step={0.1} bind:value={doc.tilt} onedit={edit} />
   </div>
 </div>
-
-<style>
-  .format-hint {
-    margin: 0 0 14px;
-    color: var(--text-dim);
-    font-size: 13px;
-  }
-</style>
