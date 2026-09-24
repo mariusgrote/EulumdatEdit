@@ -181,6 +181,14 @@
   }
 
   function onKey(e: KeyboardEvent) {
+    if (e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Tab' && store.tabs.length > 1) {
+      e.preventDefault();
+      const current = store.tabs.findIndex((tab) => tab.id === store.activeTabId);
+      const direction = e.shiftKey ? -1 : 1;
+      const next = (current + direction + store.tabs.length) % store.tabs.length;
+      store.activateTab(store.tabs[next].id);
+      return;
+    }
     const mod = e.metaKey || e.ctrlKey;
     if (!mod) return;
     const k = e.key.toLowerCase();
