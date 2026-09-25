@@ -14,6 +14,7 @@ use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow, WebviewWindowBuilder};
 
 use crate::dto::{warnings_to_dto, DocResponse, EulumdatDto, PhotometryDto, UgrDto};
+use crate::ies;
 use crate::state::{AppState, OpenDoc, Workspace};
 
 #[derive(Debug, Clone, Serialize)]
@@ -161,9 +162,46 @@ fn insert_document(
 fn load(path: &str) -> Result<(Eulumdat, String), String> {
     let canonical =
         std::fs::canonicalize(path).map_err(|e| format!("Could not open {path:?}: {e}"))?;
-    Eulumdat::from_path(&canonical)
-        .map(|(model, _warnings)| (model, canonical.to_string_lossy().into_owned()))
-        .map_err(|e| format!("Could not open {path:?}: {e}"))
+    let model = match file_format(&canonical)? {
+        "ies" => {
+            let contents =
+                std::fs::read(&canonical).map_err(|e| format!("Could not open {path:?}: {e}"))?;
+            let name = canonical.file_name().unwrap_or_default().to_string_lossy();
+            ies::parse_bytes(&contents, &name)
+                .map_err(|e| format!("Could not open {path:?}: {e}"))?
+        }
+        _ => Eulumdat::from_path(&canonical)
+            .map(|(model, _warnings)| model)
+            .map_err(|e| format!("Could not open {path:?}: {e}"))?,
+    };
+    Ok((model, canonical.to_string_lossy().into_owned()))
+}
+
+fn file_format(path: &Path) -> Result<&str, String> {
+    match path.extension().and_then(|extension| extension.to_str()) {
+        Some(extension) if extension.eq_ignore_ascii_case("ies") => Ok("ies"),
+        Some(extension) if extension.eq_ignore_ascii_case("ldt") => Ok("ldt"),
+        _ => Err("File must have an .ldt or .ies extension".into()),
+    }
+}
+
+/// Writes a document and returns the model that opening the written file
+/// would produce. IES omits EULUMDAT-only fields and uses an absolute flux
+/// basis, so the editor must show the saved representation after writing it.
+fn write_document(model: &Eulumdat, path: &Path) -> Result<Eulumdat, String> {
+    match file_format(path)? {
+        "ies" => {
+            let text = ies::serialize(model)?;
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            let saved = ies::parse(&text, &name)?;
+            std::fs::write(path, text).map_err(|e| format!("Could not write {path:?}: {e}"))?;
+            Ok(saved)
+        }
+        _ => {
+            model.write_path(path).map_err(|e| e.to_string())?;
+            Ok(model.clone())
+        }
+    }
 }
 
 fn canonical_destination(path: &str) -> Result<String, String> {
@@ -201,7 +239,7 @@ pub fn new_from_template(
     )
 }
 
-/// Opens and parses a `.ldt` file from disk.
+/// Opens and parses a `.ldt` or `.ies` file from disk.
 #[tauri::command]
 pub fn open_file(
     path: String,
@@ -617,9 +655,10 @@ pub fn save(window: WebviewWindow, state: State<'_, AppState>) -> Result<DocResp
             .model
             .clone()
             .ok_or_else(|| "No document open".to_string())?;
-        model.write_path(&path).map_err(|e| e.to_string())?;
+        let saved = write_document(&model, Path::new(&path))?;
+        doc.model = Some(saved.clone());
         doc.dirty = false;
-        respond(&model, Some(path), false, doc.strict_validation)
+        respond(&saved, Some(path), false, doc.strict_validation)
     })
 }
 
@@ -646,12 +685,39 @@ pub fn save_as(
         .model
         .clone()
         .ok_or_else(|| "No document open".to_string())?;
-    model
-        .write_path(&canonical_path)
-        .map_err(|e| e.to_string())?;
+    let saved = write_document(&model, Path::new(&canonical_path))?;
+    doc.model = Some(saved.clone());
     doc.path = Some(canonical_path.clone());
     doc.dirty = false;
-    respond(&model, Some(canonical_path), false, doc.strict_validation)
+    respond(&saved, Some(canonical_path), false, doc.strict_validation)
+}
+
+/// Writes an IES copy without changing the document's path or dirty state.
+#[tauri::command]
+pub fn export_ies(
+    path: String,
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if !path.to_ascii_lowercase().ends_with(".ies") {
+        return Err("IES export path must end in .ies".into());
+    }
+    let destination = canonical_destination(&path)?;
+    let workspace = state.workspace.lock().unwrap();
+    if workspace
+        .docs
+        .values()
+        .any(|doc| doc.path.as_deref() == Some(destination.as_str()))
+    {
+        return Err("Cannot export over an open document".into());
+    }
+    let id = active_doc_id(&workspace, window.label())?;
+    let model = workspace
+        .docs
+        .get(&id)
+        .and_then(|doc| doc.model.as_ref())
+        .ok_or("No document open")?;
+    write_document(model, Path::new(&destination)).map(|_| ())
 }
 
 /// Resamples the gamma table to a new angular step.
@@ -871,6 +937,19 @@ mod tests {
         let text = model.to_text();
         let (reparsed, _) = Eulumdat::parse(&text).expect("template should reparse");
         assert_eq!(reparsed.luminaire_name, model.luminaire_name);
+    }
+
+    #[test]
+    fn ies_file_round_trips_through_file_commands() {
+        let path = temp_export_path("round-trip.ies");
+        let mut model = template_model();
+        model.lamps[0].total_luminous_flux = 2000.0;
+        let saved = write_document(&model, &path).expect("IES file should be written");
+        let (reloaded, _) = load(&path.to_string_lossy()).expect("IES file should open");
+        assert_eq!(saved, reloaded);
+        assert_eq!(saved.lamps[0].total_luminous_flux, 1000.0);
+        assert_ne!(saved.intensities, model.intensities);
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]

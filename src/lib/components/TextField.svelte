@@ -6,10 +6,11 @@
     value: string;
     placeholder?: string;
     fieldKey?: string;
+    sourceNote?: string;
     onedit: () => void;
   }
 
-  let { label, value = $bindable(), placeholder, fieldKey, onedit }: Props = $props();
+  let { label, value = $bindable(), placeholder, fieldKey, sourceNote, onedit }: Props = $props();
 
   const uid = $props.id();
   const warnings = $derived(fieldKey ? (store.fieldWarnings[fieldKey] ?? []) : []);
@@ -22,7 +23,7 @@
   class:has-warning={warnings.length > 0}
   class:warn-highlight={highlighted}
 >
-  <label for={uid}>{label}</label>
+  <label for={uid}>{label}{#if sourceNote}<span class="source-note">{sourceNote}</span>{/if}</label>
   <input
     id={uid}
     type="text"

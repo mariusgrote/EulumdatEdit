@@ -9,7 +9,7 @@ import type { GraphType } from './registry.svelte';
 const EXPORT_SIZE = 1200;
 
 export function graphExportDefaultPath(documentFileName: string, graphSuffix: string): string {
-  const documentBase = documentFileName.trim().replace(/\.ldt$/i, '') || 'luminaire';
+  const documentBase = documentFileName.trim().replace(/\.(ldt|ies)$/i, '') || 'luminaire';
   return `${documentBase}-${graphSuffix}.svg`;
 }
 

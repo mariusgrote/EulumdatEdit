@@ -177,13 +177,18 @@ class DocStore {
   async save() {
     if (!(await this.flushEdits())) return;
     const res = await this.#run(() => api.save());
-    if (res) this.#apply(res, false);
+    if (res) this.#apply(res, true);
   }
 
   async saveAs(path: string) {
     if (!(await this.flushEdits())) return;
     const res = await this.#run(() => api.saveAs(path));
-    if (res) this.#apply(res, false);
+    if (res) this.#apply(res, true);
+  }
+
+  async exportIes(path: string) {
+    if (!(await this.flushEdits())) return;
+    await this.#run(() => api.exportIes(path));
   }
 
   async resampleGamma(step: number) {

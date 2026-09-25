@@ -2,6 +2,7 @@
 
 mod commands;
 mod dto;
+mod ies;
 #[cfg(target_os = "macos")]
 mod menu;
 mod open_request;
@@ -22,7 +23,9 @@ pub fn run() {
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
         open_request::focus_window(app);
-        if let Some(path) = open_request::ldt_path_from_args(&args, std::path::Path::new(&cwd)) {
+        if let Some(path) =
+            open_request::photometric_path_from_args(&args, std::path::Path::new(&cwd))
+        {
             open_request::deliver(app, &path);
         }
     }));
@@ -48,6 +51,7 @@ pub fn run() {
             commands::update_document,
             commands::save,
             commands::save_as,
+            commands::export_ies,
             commands::resample_gamma,
             commands::scale_to_100_percent,
             commands::set_strict_validation,
@@ -86,7 +90,7 @@ pub fn run() {
             #[cfg(any(target_os = "windows", target_os = "linux"))]
             if let Some(path) = std::env::current_dir()
                 .ok()
-                .and_then(|cwd| open_request::ldt_path_from_args(std::env::args_os(), &cwd))
+                .and_then(|cwd| open_request::photometric_path_from_args(std::env::args_os(), &cwd))
             {
                 open_request::deliver(_app.handle(), &path);
             }
@@ -110,7 +114,7 @@ pub fn run() {
                 if let Some(path) = urls
                     .iter()
                     .filter_map(|u| u.to_file_path().ok())
-                    .find(|p| open_request::is_ldt(p))
+                    .find(|p| open_request::is_photometric(p))
                 {
                     open_request::deliver(_app, &path);
                 }

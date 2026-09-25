@@ -13,6 +13,7 @@ vi.mock('./api', () => ({
   updateDocument: vi.fn(),
   save: vi.fn(),
   saveAs: vi.fn(),
+  exportIes: vi.fn(),
   resampleGamma: vi.fn(),
   scaleTo100Percent: vi.fn(),
   setStrictValidation: vi.fn()
@@ -143,6 +144,7 @@ beforeEach(async () => {
   );
   vi.mocked(api.save).mockResolvedValue(makeResponse());
   vi.mocked(api.saveAs).mockResolvedValue(makeResponse({ path: '/tmp/other.ldt' }));
+  vi.mocked(api.exportIes).mockResolvedValue(undefined);
   vi.mocked(api.resampleGamma).mockResolvedValue(makeResponse({ dirty: true }));
   vi.mocked(api.scaleTo100Percent).mockResolvedValue(makeResponse({ dirty: true }));
   vi.mocked(api.setStrictValidation).mockResolvedValue(makeResponse({ strictValidation: true }));
@@ -275,6 +277,19 @@ describe('flush before backend model operations', () => {
     expect(api.updateDocument).toHaveBeenCalledTimes(1);
   });
 
+  it('save() displays the model written by the backend', async () => {
+    const saved = makeDoc();
+    saved.lamps[0].totalLuminousFlux = 1000;
+    saved.luminaireName = 'Canonical IES name';
+    vi.mocked(api.save).mockResolvedValue(makeResponse({ doc: saved, path: '/tmp/test.ies' }));
+
+    await store.save();
+
+    expect(store.doc?.luminaireName).toBe('Canonical IES name');
+    expect(store.path).toBe('/tmp/test.ies');
+    expect(store.dirty).toBe(false);
+  });
+
   it('saveAs() commits the pending edit first', async () => {
     editLuminaireName('Saved as');
     await store.saveAs('/tmp/other.ldt');
@@ -282,6 +297,29 @@ describe('flush before backend model operations', () => {
     expect(order(vi.mocked(api.updateDocument))).toBeLessThan(order(vi.mocked(api.saveAs)));
     await vi.advanceTimersByTimeAsync(1000);
     expect(api.updateDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('saveAs() displays the converted model at its new path', async () => {
+    const saved = makeDoc();
+    saved.lamps[0].lampCount = 1;
+    saved.lamps[0].lampType = 'IES lamp';
+    vi.mocked(api.saveAs).mockResolvedValue(makeResponse({ doc: saved, path: '/tmp/other.ies' }));
+
+    await store.saveAs('/tmp/other.ies');
+
+    expect(store.doc?.lamps[0].lampType).toBe('IES lamp');
+    expect(store.path).toBe('/tmp/other.ies');
+    expect(store.dirty).toBe(false);
+  });
+
+  it('exportIes() includes a pending edit and keeps the document dirty', async () => {
+    editLuminaireName('Exported name');
+    await store.exportIes('/tmp/copy.ies');
+
+    expect(vi.mocked(api.updateDocument).mock.calls[0][0].luminaireName).toBe('Exported name');
+    expect(order(vi.mocked(api.updateDocument))).toBeLessThan(order(vi.mocked(api.exportIes)));
+    expect(store.path).toBe('/tmp/test.ldt');
+    expect(store.dirty).toBe(true);
   });
 
   it('resampleGamma() and scaleTo100() commit the pending edit first', async () => {

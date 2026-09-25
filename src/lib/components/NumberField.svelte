@@ -14,6 +14,7 @@
     hardMax?: number;
     unit?: string;
     fieldKey?: string;
+    sourceNote?: string;
     onedit: () => void;
   }
 
@@ -28,6 +29,7 @@
     hardMax,
     unit,
     fieldKey,
+    sourceNote,
     onedit
   }: Props = $props();
 
@@ -59,7 +61,7 @@
   class:has-warning={warnings.length > 0}
   class:warn-highlight={highlighted}
 >
-  <label for={uid}>{label}{#if unit}<span class="unit"> ({unit})</span>{/if}</label>
+  <label for={uid}>{label}{#if unit}<span class="unit"> ({unit})</span>{/if}{#if sourceNote}<span class="source-note">{sourceNote}</span>{/if}</label>
   <input
     id={uid}
     type="number"

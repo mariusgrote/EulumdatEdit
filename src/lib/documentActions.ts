@@ -3,10 +3,13 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import * as api from '$lib/api';
 import { store } from '$lib/store.svelte';
 
-export const EULUMDAT_FILTER = [{ name: 'EULUMDAT', extensions: ['ldt', 'LDT'] }];
+export const PHOTOMETRIC_FILTERS = [
+  { name: 'EULUMDAT', extensions: ['ldt'] },
+  { name: 'IES photometry', extensions: ['ies'] }
+];
 
 export async function openFileDialog(): Promise<void> {
-  const path = await openDialog({ multiple: false, filters: EULUMDAT_FILTER });
+  const path = await openDialog({ multiple: false, filters: PHOTOMETRIC_FILTERS });
   if (typeof path === 'string') await openPath(path);
 }
 
@@ -64,8 +67,20 @@ export async function saveDocument(): Promise<void> {
 export async function saveDocumentAs(): Promise<void> {
   if (!store.doc) return;
   const path = await saveDialog({
-    filters: EULUMDAT_FILTER,
+    filters: PHOTOMETRIC_FILTERS,
     defaultPath: store.doc.fileName || 'luminaire.ldt'
   });
   if (path) await store.saveAs(path);
+}
+
+export async function exportIes(): Promise<void> {
+  if (!store.doc) return;
+  const name = (store.path?.split(/[\\/]/).pop() || store.doc.fileName || 'luminaire')
+    .replace(/\.(ldt|ies)$/i, '');
+  const path = await saveDialog({
+    filters: [{ name: 'IES photometry', extensions: ['ies'] }],
+    defaultPath: `${name}.ies`
+  });
+  if (!path) return;
+  await store.exportIes(path);
 }
