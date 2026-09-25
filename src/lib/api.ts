@@ -1,33 +1,60 @@
 // Typed wrappers around the Tauri commands exposed by the Rust backend.
 
 import { invoke } from '@tauri-apps/api/core';
-import type { DocResponse, EulumdatDoc, PolarOptions } from './types';
+import type { DocResponse, EulumdatDoc, PolarOptions, WindowStateResponse } from './types';
 
-export function newFromTemplate(): Promise<DocResponse> {
+export function newFromTemplate(): Promise<WindowStateResponse> {
   return invoke('new_from_template');
 }
 
-export function openFile(path: string): Promise<DocResponse> {
+export function openFile(path: string): Promise<WindowStateResponse> {
   return invoke('open_file', { path });
 }
 
-/** Opens `path`, or a new template document when omitted, in a new window. */
-export function openWindow(path?: string): Promise<void> {
-  return invoke('open_window', { path: path ?? null });
+export function reloadDocument(): Promise<DocResponse> {
+  return invoke('reload_document');
 }
 
-/** The document already loaded for this window (set up by `openWindow`). */
-export function currentDocument(): Promise<DocResponse | null> {
+/** The active document and ordered tabs for this window. */
+export function currentDocument(): Promise<WindowStateResponse> {
   return invoke('current_document');
 }
 
-export function closeDocument(): Promise<void> {
-  return invoke('close_document');
+export function closeDocument(tabId?: string): Promise<WindowStateResponse> {
+  return invoke('close_document', { tabId: tabId ?? null });
 }
 
-/** Whether another window holds unsaved changes. */
-export function otherWindowsDirty(): Promise<boolean> {
-  return invoke('other_windows_dirty');
+export function activateTab(tabId: string): Promise<WindowStateResponse> {
+  return invoke('activate_tab', { tabId });
+}
+
+export function moveTab(
+  tabId: string,
+  targetWindow: string,
+  targetIndex?: number
+): Promise<WindowStateResponse> {
+  return invoke('move_tab', { tabId, targetWindow, targetIndex: targetIndex ?? null });
+}
+
+export function detachTab(tabId: string, x: number, y: number): Promise<WindowStateResponse> {
+  return invoke('detach_tab', { tabId, x, y });
+}
+
+export function startTabPreview(id: string, title: string): Promise<void> {
+  return invoke('start_tab_preview', { id, encodedTitle: encodeURIComponent(title) });
+}
+
+export function moveTabPreview(id: string): Promise<void> {
+  return invoke('move_tab_preview', { id });
+}
+
+export function endTabPreview(id: string): Promise<void> {
+  return invoke('end_tab_preview', { id });
+}
+
+/** Whether any tab other than this window's active tab has unsaved changes. */
+export function otherDocumentsDirty(): Promise<boolean> {
+  return invoke('other_documents_dirty');
 }
 
 /** Exits the app. Call through `quitApplication`, which guards unsaved changes. */
@@ -40,8 +67,8 @@ export function takePendingOpen(): Promise<string | null> {
   return invoke('take_pending_open');
 }
 
-export function updateDocument(doc: EulumdatDoc): Promise<DocResponse> {
-  return invoke('update_document', { doc });
+export function updateDocument(doc: EulumdatDoc, tabId: string): Promise<DocResponse> {
+  return invoke('update_document', { doc, tabId });
 }
 
 export function save(): Promise<DocResponse> {

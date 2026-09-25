@@ -1,5 +1,5 @@
 //! The macOS app menu. Custom items emit a `menu` event carrying their id to
-//! the focused window (see `lib.rs`), so each window handles its own document.
+//! the focused window (see `lib.rs`), so actions apply to its active tab.
 //!
 //! macOS only: on Windows/Linux the menu would be rendered as a per-window
 //! menu bar, which clashes with the app's custom title bar. Those platforms
@@ -40,13 +40,28 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 .build(app)?,
         )
         .separator()
-        // Cmd+W closes the document rather than the window.
         .item(
-            &MenuItemBuilder::with_id("close", "Close")
+            &MenuItemBuilder::with_id("save", "Save")
+                .accelerator("CmdOrCtrl+S")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("save-as", "Save As…")
+                .accelerator("CmdOrCtrl+Shift+S")
+                .build(app)?,
+        )
+        .separator()
+        // Cmd+W closes the active tab. Its window closes when it was the last.
+        .item(
+            &MenuItemBuilder::with_id("close", "Close Tab")
                 .accelerator("CmdOrCtrl+W")
                 .build(app)?,
         )
-        .close_window_with_text("Close Window")
+        .item(
+            &MenuItemBuilder::with_id("close-window", "Close Window")
+                .accelerator("CmdOrCtrl+Shift+W")
+                .build(app)?,
+        )
         .build()?;
 
     let edit_menu = SubmenuBuilder::new(app, "Edit")
@@ -61,11 +76,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 
     let view_menu = SubmenuBuilder::new(app, "View").fullscreen().build()?;
 
-    let window_menu = SubmenuBuilder::new(app, "Window")
-        .minimize()
-        .separator()
-        .close_window()
-        .build()?;
+    let window_menu = SubmenuBuilder::new(app, "Window").minimize().build()?;
 
     MenuBuilder::new(app)
         .items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu])

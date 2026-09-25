@@ -3,7 +3,16 @@
 
 import { ask } from '@tauri-apps/plugin-dialog';
 import * as api from './api';
-import type { DocResponse, EulumdatDoc, Photometry, Ugr, UgrFluxBasis, Warning } from './types';
+import type {
+  DocResponse,
+  EulumdatDoc,
+  Photometry,
+  TabSummary,
+  Ugr,
+  UgrFluxBasis,
+  Warning,
+  WindowStateResponse
+} from './types';
 import { warningsByField } from './warningNavigation';
 
 class DocStore {
@@ -19,6 +28,8 @@ class DocStore {
   error = $state<string | null>(null);
   /** Legacy EULUMDAT text-length limits (8.3 filename, etc.). Off by default. */
   strictValidation = $state(false);
+  tabs = $state<TabSummary[]>([]);
+  activeTabId = $state<string | null>(null);
 
   /** Warning messages keyed by form field key, for inline display beside inputs. */
   fieldWarnings = $derived.by<Record<string, string[]>>(() => warningsByField(this.warnings));
@@ -27,6 +38,8 @@ class DocStore {
   highlightedFieldKey = $state<string | null>(null);
 
   #commitTimer: ReturnType<typeof setTimeout> | null = null;
+  #commitInFlight: Promise<boolean> | null = null;
+  #editRevision = 0;
   #highlightTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Highlights a field for a short window so the user can spot it after navigation. */
@@ -50,6 +63,30 @@ class DocStore {
     this.dirty = res.dirty;
     this.strictValidation = res.strictValidation;
     this.error = null;
+    const active = this.tabs.find((tab) => tab.id === this.activeTabId);
+    if (active) {
+      active.path = res.path;
+      active.title = res.path?.split(/[\\/]/).pop() || 'Untitled';
+      active.dirty = res.dirty;
+    }
+  }
+
+  #clearDocument() {
+    this.doc = null;
+    this.warnings = [];
+    this.photometry = null;
+    this.ugr = null;
+    this.path = null;
+    this.dirty = false;
+    this.error = null;
+    this.strictValidation = false;
+  }
+
+  #applyWindow(res: WindowStateResponse) {
+    this.tabs = res.tabs;
+    this.activeTabId = res.activeTabId;
+    if (res.document) this.#apply(res.document, true);
+    else this.#clearDocument();
   }
 
   async #run<T>(fn: () => Promise<T>): Promise<T | null> {
@@ -64,64 +101,77 @@ class DocStore {
     }
   }
 
-  /** Guards actions that would discard in-progress edits (close, quit).
-   *  Returns true when it is safe to proceed: either the document is clean or
-   *  the user confirmed discarding their unsaved changes. */
-  async confirmDiscardChanges(): Promise<boolean> {
-    if (!this.dirty) return true;
-    return ask('You have unsaved changes that will be lost. Continue?', {
+  async confirmCloseWindow(): Promise<boolean> {
+    const dirtyTabs = this.tabs.filter((tab) => tab.dirty);
+    if (dirtyTabs.length === 0) return true;
+    const names = dirtyTabs.map((tab) => tab.title).join(', ');
+    return ask(`Unsaved changes in ${names} will be lost. Close this window anyway?`, {
       title: 'Unsaved changes',
       kind: 'warning'
     });
   }
 
   async newDoc() {
-    this.#cancelPendingCommit();
+    if (!(await this.flushEdits())) return;
     const res = await this.#run(() => api.newFromTemplate());
-    if (res) this.#apply(res, true);
+    if (res) this.#applyWindow(res);
   }
 
   async open(path: string) {
-    this.#cancelPendingCommit();
+    if (!(await this.flushEdits())) return;
     const res = await this.#run(() => api.openFile(path));
-    if (res) this.#apply(res, true);
-  }
-
-  /** Opens `path`, or a new template document when omitted, in a new window.
-   *  Errors (e.g. an unparseable file) are reported in this window. */
-  async openInNewWindow(path?: string) {
-    await this.#run(() => api.openWindow(path));
+    if (res) this.#applyWindow(res);
   }
 
   /** Shows the document the backend prepared for this window, if any. */
   async loadCurrent() {
+    if (!(await this.flushEdits())) return;
     const res = await this.#run(() => api.currentDocument());
-    if (res) this.#apply(res, true);
+    if (res) this.#applyWindow(res);
   }
 
-  /** Closes the open document and returns the UI to the welcome screen. */
-  async close() {
-    this.#cancelPendingCommit();
+  async activateTab(tabId: string) {
+    if (tabId === this.activeTabId) return;
+    if (!(await this.flushEdits())) return;
+    const res = await this.#run(() => api.activateTab(tabId));
+    if (res) this.#applyWindow(res);
+  }
+
+  /** Closes one tab and selects the backend-chosen neighbour. */
+  async close(tabId = this.activeTabId) {
+    if (!tabId) return;
+    if (tabId === this.activeTabId) {
+      this.#cancelPendingCommit();
+      await this.#commitInFlight;
+    }
+    else if (!(await this.flushEdits())) return;
     const res = await this.#run(async () => {
-      await api.closeDocument();
-      return true;
+      return api.closeDocument(tabId);
     });
     if (!res) return;
-    this.doc = null;
-    this.warnings = [];
-    this.photometry = null;
-    this.ugr = null;
-    this.path = null;
-    this.dirty = false;
-    this.error = null;
-    this.strictValidation = false;
+    this.#applyWindow(res);
+  }
+
+  async moveTab(tabId: string, targetWindow: string, targetIndex?: number) {
+    if (!(await this.flushEdits())) return;
+    const res = await this.#run(() => api.moveTab(tabId, targetWindow, targetIndex));
+    if (res) this.#applyWindow(res);
+  }
+
+  async detachTab(tabId: string, x: number, y: number) {
+    if (!(await this.flushEdits())) return;
+    const res = await this.#run(() => api.detachTab(tabId, x, y));
+    if (res) this.#applyWindow(res);
   }
 
   /** Discards in-memory edits by reloading the document from its file on disk.
    *  No-op for an unsaved (pathless) document. */
   async revert() {
     if (!this.path) return;
-    await this.open(this.path);
+    this.#cancelPendingCommit();
+    await this.#commitInFlight;
+    const res = await this.#run(() => api.reloadDocument());
+    if (res) this.#apply(res, true);
   }
 
   async save() {
@@ -161,7 +211,10 @@ class DocStore {
 
   /** Marks the document dirty and schedules a debounced validate/recompute. */
   edited() {
+    this.#editRevision++;
     this.dirty = true;
+    const active = this.tabs.find((tab) => tab.id === this.activeTabId);
+    if (active) active.dirty = true;
     if (this.#commitTimer) clearTimeout(this.#commitTimer);
     this.#commitTimer = setTimeout(() => this.commit(), 250);
   }
@@ -170,21 +223,38 @@ class DocStore {
    *  Resolves false when Rust rejected the update (see `error`). */
   async commit(): Promise<boolean> {
     this.#cancelPendingCommit();
-    if (!this.doc) return true;
+    if (!this.doc || !this.activeTabId) return true;
     const snapshot = $state.snapshot(this.doc) as EulumdatDoc;
-    const res = await this.#run(() => api.updateDocument(snapshot));
-    if (!res) return false;
-    this.#apply(res, false);
-    return true;
+    const tabId = this.activeTabId;
+    const revision = this.#editRevision;
+    const previous = this.#commitInFlight;
+    const pending = (async () => {
+      // Preserve backend order when another edit arrives during an IPC update.
+      if (previous) await previous;
+      const res = await this.#run(() => api.updateDocument(snapshot, tabId));
+      if (!res) return false;
+      if (this.activeTabId === tabId && this.#editRevision === revision) {
+        this.#apply(res, false);
+      }
+      return true;
+    })();
+    this.#commitInFlight = pending;
+    try {
+      return await pending;
+    } finally {
+      if (this.#commitInFlight === pending) this.#commitInFlight = null;
+    }
   }
 
   /** Commits a pending debounced edit immediately so Rust holds the latest doc.
    *  Operations that read or replace the backend model must stop when this
    *  resolves false, or they would act on the stale model. */
   async flushEdits(): Promise<boolean> {
-    if (!this.#commitTimer) return true;
-    this.#cancelPendingCommit();
-    return this.commit();
+    while (this.#commitTimer || this.#commitInFlight) {
+      const pending = this.#commitTimer ? this.commit() : this.#commitInFlight;
+      if (pending && !(await pending)) return false;
+    }
+    return true;
   }
 
   #cancelPendingCommit() {

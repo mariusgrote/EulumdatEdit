@@ -1,4 +1,5 @@
 import { ask, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import * as api from '$lib/api';
 import { store } from '$lib/store.svelte';
 
@@ -9,32 +10,36 @@ export async function openFileDialog(): Promise<void> {
   if (typeof path === 'string') await openPath(path);
 }
 
-/** Opens `path` in this window when it is empty, otherwise in a new window. */
+/** Opens `path` in a new tab, or focuses its existing tab in any window. */
 export async function openPath(path: string): Promise<void> {
-  if (store.doc) {
-    await store.openInNewWindow(path);
-  } else {
-    await store.open(path);
-  }
+  await store.open(path);
 }
 
-/** Starts a new luminaire in this window when it is empty, otherwise in a new window. */
+/** Starts a new luminaire in a new tab. */
 export async function newDocument(): Promise<void> {
-  if (store.doc) {
-    await store.openInNewWindow();
-  } else {
-    await store.newDoc();
+  await store.newDoc();
+}
+
+export async function closeDocument(tabId = store.activeTabId): Promise<void> {
+  if (!tabId) {
+    await getCurrentWebviewWindow().close();
+    return;
   }
+  const tab = store.tabs.find((candidate) => candidate.id === tabId);
+  if (tab?.dirty) {
+    const ok = await ask(`Unsaved changes in "${tab.title}" will be lost. Close it anyway?`, {
+      title: 'Unsaved changes',
+      kind: 'warning'
+    });
+    if (!ok) return;
+  }
+  await store.close(tabId);
+  if (store.tabs.length === 0) await getCurrentWebviewWindow().close();
 }
 
-export async function closeDocument(): Promise<void> {
-  if (!(await store.confirmDiscardChanges())) return;
-  await store.close();
-}
-
-/** Quits the app, asking first when this or any other window has unsaved changes. */
+/** Quits the app, asking first when any tab has unsaved changes. */
 export async function quitApplication(): Promise<void> {
-  const unsaved = store.dirty || (await api.otherWindowsDirty());
+  const unsaved = store.dirty || (await api.otherDocumentsDirty());
   if (unsaved) {
     const ok = await ask('Unsaved changes in open windows will be lost. Quit anyway?', {
       title: 'Unsaved changes',
