@@ -40,6 +40,17 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 .build(app)?,
         )
         .separator()
+        .item(
+            &MenuItemBuilder::with_id("save", "Save")
+                .accelerator("CmdOrCtrl+S")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("save-as", "Save As…")
+                .accelerator("CmdOrCtrl+Shift+S")
+                .build(app)?,
+        )
+        .separator()
         // Cmd+W closes the active tab. Its window closes when it was the last.
         .item(
             &MenuItemBuilder::with_id("close", "Close Tab")

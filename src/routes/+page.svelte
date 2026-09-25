@@ -7,6 +7,7 @@
     openPath,
     closeDocument,
     saveDocument,
+    saveDocumentAs,
     quitApplication
   } from '$lib/documentActions';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -128,6 +129,8 @@
     const menuActions: Record<string, () => unknown> = {
       new: newDocument,
       open: openFileDialog,
+      save: saveDocument,
+      'save-as': saveDocumentAs,
       close: onCloseShortcut,
       'close-window': () => appWindow.close(),
       quit: quitApplication
@@ -194,7 +197,8 @@
     const k = e.key.toLowerCase();
     if (k === 's') {
       e.preventDefault();
-      saveDocument();
+      if (e.shiftKey) saveDocumentAs();
+      else saveDocument();
     } else if (k === 'o') {
       e.preventDefault();
       openFileDialog();

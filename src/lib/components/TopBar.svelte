@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
   import { slide } from 'svelte/transition';
   import { store } from '$lib/store.svelte';
@@ -32,6 +33,48 @@
   }
 
   const warnCount = $derived(store.warnings.length);
+  let tabsElement: HTMLDivElement;
+  let tabMenuElement = $state<HTMLDetailsElement>();
+  let fileMenuElement = $state<HTMLDetailsElement>();
+
+  function onWindowClick(event: MouseEvent) {
+    if (!(event.target instanceof Node)) return;
+    if (!tabMenuElement?.contains(event.target)) tabMenuElement?.removeAttribute('open');
+    if (!fileMenuElement?.contains(event.target)) fileMenuElement?.removeAttribute('open');
+  }
+
+  function onWindowKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape') return;
+    tabMenuElement?.removeAttribute('open');
+    fileMenuElement?.removeAttribute('open');
+  }
+
+  function showActiveTab() {
+    if (!tabsElement) return;
+    const active = tabsElement.querySelector<HTMLElement>('.tab.active');
+    if (!active) return;
+    const strip = tabsElement.getBoundingClientRect();
+    const tab = active.getBoundingClientRect();
+    if (tab.width > strip.width) {
+      tabsElement.scrollLeft += tab.left - strip.left;
+      return;
+    }
+    if (tab.left < strip.left) tabsElement.scrollLeft -= strip.left - tab.left;
+    else if (tab.right > strip.right) tabsElement.scrollLeft += tab.right - strip.right;
+  }
+
+  $effect(() => {
+    const activeTitle = store.tabs.find((tab) => tab.id === store.activeTabId)?.title;
+    if (!activeTitle) return;
+    const frame = requestAnimationFrame(showActiveTab);
+    return () => cancelAnimationFrame(frame);
+  });
+
+  onMount(() => {
+    const observer = new ResizeObserver(showActiveTab);
+    observer.observe(tabsElement);
+    return () => observer.disconnect();
+  });
 
   const motionDuration = () =>
     window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 170;
@@ -162,15 +205,15 @@
   }
 </script>
 
-<svelte:window ondragover={onWindowDragOver} ondrop={onWindowDrop} />
+<svelte:window
+  ondragover={onWindowDragOver}
+  ondrop={onWindowDrop}
+  onclick={onWindowClick}
+  onkeydown={onWindowKeydown}
+/>
 
-<header class="topbar">
-  <div class="brand" data-tauri-drag-region="deep">
-    <span class="logo">◐</span>
-    <span class="name">EulumdatEdit</span>
-  </div>
-
-  <div class="tabs">
+<header class="topbar" data-tauri-drag-region>
+  <div class="tabs" role="tablist" aria-label="Open documents" bind:this={tabsElement}>
     {#each store.tabs as tab, index (tab.id)}
       <div
         class="tab"
@@ -222,6 +265,49 @@
     ></div>
   </div>
 
+  {#if store.tabs.length > 0}
+    <details class="tab-menu" bind:this={tabMenuElement}>
+      <summary aria-label="Show all tabs" title="Show all tabs">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5 7h14M5 12h14M5 17h10" />
+        </svg>
+      </summary>
+      <div class="tab-menu-panel">
+        {#each store.tabs as tab (tab.id)}
+          <button
+            class:active={tab.id === store.activeTabId}
+            title={tab.path || tab.title}
+            onclick={(event) => {
+              event.currentTarget.closest('details')?.removeAttribute('open');
+              store.activateTab(tab.id);
+            }}
+          >
+            <span>{tab.title}</span>
+            {#if tab.dirty}<span class="dot" aria-label="Unsaved changes">●</span>{/if}
+          </button>
+        {/each}
+      </div>
+    </details>
+  {/if}
+
+  <details class="file-menu" bind:this={fileMenuElement}>
+    <summary>File</summary>
+    <div class="file-menu-panel">
+      <button onclick={(event) => {
+        event.currentTarget.closest('details')?.removeAttribute('open');
+        newDocument();
+      }}>New</button>
+      <button onclick={(event) => {
+        event.currentTarget.closest('details')?.removeAttribute('open');
+        openFileDialog();
+      }}>Open…</button>
+      <button disabled={!store.doc} onclick={(event) => {
+        event.currentTarget.closest('details')?.removeAttribute('open');
+        saveDocumentAs();
+      }}>Save As…</button>
+    </div>
+  </details>
+
   <div class="actions">
     {#if store.dirty && store.path}
       <button
@@ -235,10 +321,7 @@
         </svg>
       </button>
     {/if}
-    <button class="btn ghost" onclick={newDocument}>New</button>
-    <button class="btn ghost" onclick={openFileDialog}>Open</button>
     <button class="btn" onclick={saveDocument} disabled={!store.doc}>Save</button>
-    <button class="btn ghost" onclick={saveDocumentAs} disabled={!store.doc}>Save As</button>
 
     <button
       class="btn ghost badge-btn"
@@ -247,11 +330,12 @@
       onclick={toggleValidation}
       disabled={!store.doc}
       title={showValidation ? 'Show diagram' : 'Show validation warnings'}
+      aria-label={showValidation ? 'Show diagram' : `Show validation warnings, ${warnCount} warnings`}
     >
       <svg class="warn-ico" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 4 2.5 20.5h19zM12 10v4M12 17.5v.01" />
       </svg>
-      {warnCount}
+      {#if warnCount > 0}{warnCount}{/if}
     </button>
 
     <button
@@ -273,26 +357,12 @@
   .topbar {
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 8px;
     /* leave room for the macOS traffic lights (titleBarStyle: Overlay) */
     padding: 0 14px 0 82px;
     height: 46px;
     background: var(--bg-elev);
     border-bottom: 1px solid var(--border);
-  }
-  .brand {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .logo {
-    color: var(--accent);
-    font-size: 20px;
-  }
-  .name {
-    font-weight: 600;
-    letter-spacing: -0.01em;
   }
   .tabs {
     flex: 1;
@@ -311,9 +381,8 @@
     display: none;
   }
   .tab {
-    flex: 0 1 250px;
-    min-width: 150px;
-    max-width: 300px;
+    flex: 0 1 auto;
+    min-width: 140px;
     align-self: end;
     height: 35px;
     display: flex;
@@ -411,6 +480,119 @@
     align-self: stretch;
     position: relative;
   }
+  .tab-menu,
+  .file-menu {
+    flex: none;
+    position: relative;
+  }
+  .tab-menu summary,
+  .file-menu summary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-sm);
+    color: var(--text-dim);
+    cursor: pointer;
+    list-style: none;
+  }
+  .tab-menu summary::-webkit-details-marker {
+    display: none;
+  }
+  .file-menu summary::-webkit-details-marker {
+    display: none;
+  }
+  .tab-menu summary:hover,
+  .tab-menu[open] summary,
+  .file-menu summary:hover,
+  .file-menu[open] summary {
+    background: var(--bg-sunken);
+    color: var(--text);
+  }
+  .tab-menu summary:focus-visible,
+  .file-menu summary:focus-visible {
+    outline: 2px solid var(--accent);
+  }
+  .tab-menu svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+  }
+  .tab-menu-panel {
+    position: absolute;
+    top: calc(100% + 7px);
+    right: 0;
+    z-index: 10;
+    width: max-content;
+    max-width: min(640px, calc(100vw - 260px));
+    max-height: min(420px, 70vh);
+    overflow-y: auto;
+    padding: 4px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--bg-elev);
+    box-shadow: var(--shadow-pop);
+  }
+  .tab-menu-panel button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+  }
+  .tab-menu-panel button:hover,
+  .tab-menu-panel button.active {
+    background: var(--bg-sunken);
+  }
+  .tab-menu-panel button span:first-child {
+    flex: 1;
+    overflow-wrap: anywhere;
+  }
+  .file-menu summary {
+    width: auto;
+    padding: 0 9px;
+    font-weight: 500;
+  }
+  .file-menu-panel {
+    position: absolute;
+    top: calc(100% + 7px);
+    right: 0;
+    z-index: 10;
+    width: 220px;
+    padding: 4px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--bg-elev);
+    box-shadow: var(--shadow-pop);
+  }
+  .file-menu-panel button {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    padding: 8px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+  }
+  .file-menu-panel button:hover:not(:disabled) {
+    background: var(--bg-sunken);
+  }
+  .file-menu-panel button:disabled {
+    color: var(--text-faint);
+    cursor: default;
+  }
   .revert {
     display: inline-flex;
     align-items: center;
@@ -477,13 +659,5 @@
   }
   .panel-btn.active {
     color: var(--text);
-  }
-  @media (max-width: 1049px) {
-    .topbar {
-      gap: 12px;
-    }
-    .name {
-      display: none;
-    }
   }
 </style>
