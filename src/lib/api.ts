@@ -40,6 +40,18 @@ export function detachTab(tabId: string, x: number, y: number): Promise<WindowSt
   return invoke('detach_tab', { tabId, x, y });
 }
 
+export function startTabPreview(id: string, title: string): Promise<void> {
+  return invoke('start_tab_preview', { id, encodedTitle: encodeURIComponent(title) });
+}
+
+export function moveTabPreview(id: string): Promise<void> {
+  return invoke('move_tab_preview', { id });
+}
+
+export function endTabPreview(id: string): Promise<void> {
+  return invoke('end_tab_preview', { id });
+}
+
 /** Whether any tab other than this window's active tab has unsaved changes. */
 export function otherDocumentsDirty(): Promise<boolean> {
   return invoke('other_documents_dirty');

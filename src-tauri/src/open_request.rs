@@ -38,8 +38,13 @@ pub fn target_window(app: &AppHandle) -> Option<WebviewWindow> {
     let windows = app.webview_windows();
     windows
         .values()
+        .filter(|w| !crate::tab_preview::is_preview_label(w.label()))
         .find(|w| w.is_focused().unwrap_or(false))
-        .or_else(|| windows.values().next())
+        .or_else(|| {
+            windows
+                .values()
+                .find(|w| !crate::tab_preview::is_preview_label(w.label()))
+        })
         .cloned()
 }
 

@@ -38,6 +38,8 @@ pub struct Workspace {
 #[derive(Debug, Default)]
 pub struct AppState {
     pub workspace: Mutex<Workspace>,
+    /// Active native tab previews, keyed by their source document window.
+    pub tab_previews: Mutex<HashMap<String, String>>,
     /// Source of unique document/tab ids.
     pub next_doc_id: AtomicU32,
     /// Source of unique labels for windows opened after `main`.

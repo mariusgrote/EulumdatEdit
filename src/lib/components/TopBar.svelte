@@ -12,6 +12,7 @@
   } from '$lib/documentActions';
   import { ask } from '@tauri-apps/plugin-dialog';
   import { TabPointerDragSession, type TabPointerDrag } from '$lib/tabPointerDrag';
+  import { TabDragPreview } from '$lib/tabDragPreview';
   import {
     getAllWebviewWindows,
     getCurrentWebviewWindow
@@ -88,6 +89,7 @@
   let dropIndex = $state<number | null>(null);
   let suppressClick = false;
   let capturedTab: HTMLElement | null = null;
+  let nativePreview: TabDragPreview | null = null;
 
   function tabInsertionIndex(clientX: number): number {
     const tabs = [...document.querySelectorAll<HTMLElement>('[data-tab-id]')];
@@ -100,6 +102,7 @@
 
   function onTabPointerDown(event: PointerEvent, tabId: string) {
     if (event.button !== 0 || !event.isPrimary) return;
+    cancelTabDrag();
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     capturedTab = target;
@@ -108,6 +111,8 @@
   }
 
   function cancelTabDrag() {
+    nativePreview?.end();
+    nativePreview = null;
     if (!tabDrag) return;
     const pointerId = tabDrag.pointerId;
     dragSession.cancel();
@@ -121,6 +126,12 @@
     if (!tabDrag || event.pointerId !== tabDrag.pointerId) return;
     tabDrag = dragSession.move(event);
     if (!tabDrag?.dragging) return;
+    if (!nativePreview) {
+      const title = store.tabs.find((tab) => tab.id === tabDrag?.tabId)?.title ?? '';
+      nativePreview = new TabDragPreview(title, (message) => { store.error = message; });
+    } else {
+      nativePreview.move();
+    }
     const strip = tabsElement.getBoundingClientRect();
     dropIndex = event.clientY >= strip.top && event.clientY <= strip.bottom &&
       event.clientX >= strip.left && event.clientX <= strip.right
@@ -168,7 +179,7 @@
     }
 
     for (const candidate of await getAllWebviewWindows()) {
-      if (candidate.label === current.label) continue;
+      if (candidate.label === current.label || candidate.label.startsWith('tab-preview-')) continue;
       const position = await candidate.outerPosition();
       const size = await candidate.outerSize();
       const scale = await candidate.scaleFactor();
@@ -189,6 +200,8 @@
     await store.detachTab(drag.tabId, end.x - 180, end.y - 18);
     if (store.tabs.length === 0) await current.close();
   }
+
+  onMount(() => () => cancelTabDrag());
 </script>
 
 <svelte:window
@@ -335,11 +348,6 @@
       </svg>
     </button>
   </div>
-  {#if tabDrag?.dragging}
-    <div class="tab-drag-preview" style:left={`${tabDrag.clientX + 12}px`} style:top={`${tabDrag.clientY + 12}px`}>
-      {store.tabs.find((tab) => tab.id === tabDrag?.tabId)?.title}
-    </div>
-  {/if}
 </header>
 
 <style>
@@ -407,21 +415,6 @@
   .tab.dragging {
     opacity: 0.25;
     cursor: grabbing;
-  }
-  .tab-drag-preview {
-    position: fixed;
-    z-index: 100;
-    max-width: 260px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    padding: 8px 11px;
-    border: 1px solid var(--border-strong);
-    border-radius: 7px;
-    background: var(--bg-elev);
-    color: var(--text);
-    box-shadow: var(--shadow-pop);
-    pointer-events: none;
   }
   .tab.drop-before::before,
   .title-drag-space.drop-end::before {

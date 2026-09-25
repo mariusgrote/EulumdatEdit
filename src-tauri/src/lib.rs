@@ -6,6 +6,7 @@ mod dto;
 mod menu;
 mod open_request;
 mod state;
+mod tab_preview;
 
 use tauri::{Emitter, Manager};
 
@@ -38,6 +39,9 @@ pub fn run() {
             commands::activate_tab,
             commands::move_tab,
             commands::detach_tab,
+            tab_preview::start_tab_preview,
+            tab_preview::move_tab_preview,
+            tab_preview::end_tab_preview,
             commands::other_documents_dirty,
             commands::quit_app,
             commands::take_pending_open,
@@ -52,6 +56,10 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
+                if tab_preview::is_preview_label(window.label()) {
+                    return;
+                }
+                tab_preview::remove_source(window.app_handle(), window.label());
                 let state = window.state::<AppState>();
                 commands::remove_window(&state, window.label());
             }
