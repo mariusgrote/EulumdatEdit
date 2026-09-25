@@ -293,6 +293,7 @@ fn build_window_at(app: &AppHandle, label: &str, x: f64, y: f64) -> tauri::Resul
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 pub fn open_empty_window(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
     let id = state.next_window_id.fetch_add(1, Ordering::SeqCst);
