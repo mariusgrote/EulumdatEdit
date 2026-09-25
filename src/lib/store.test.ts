@@ -7,6 +7,7 @@ vi.mock('./api', () => ({
   reloadDocument: vi.fn(),
   currentDocument: vi.fn(),
   closeDocument: vi.fn(),
+  activateTab: vi.fn(),
   moveTab: vi.fn(),
   detachTab: vi.fn(),
   updateDocument: vi.fn(),
@@ -125,6 +126,16 @@ function order(fn: { mock: { invocationCallOrder: number[] } }): number {
   return fn.mock.invocationCallOrder[0];
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: string) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 beforeEach(async () => {
   vi.useFakeTimers();
   vi.mocked(api.updateDocument).mockImplementation(async (doc) =>
@@ -165,6 +176,89 @@ describe('debounced commit', () => {
     expect(api.updateDocument).toHaveBeenCalledTimes(1);
     expect(vi.mocked(api.updateDocument).mock.calls[0][0].luminaireName).toBe('AB');
     expect(vi.mocked(api.updateDocument).mock.calls[0][1]).toBe('tab-1');
+  });
+
+  it('waits for a timer-started update before saving', async () => {
+    const update = deferred<DocResponse>();
+    vi.mocked(api.updateDocument).mockReturnValue(update.promise);
+    editLuminaireName('Saved after update');
+    vi.advanceTimersByTime(250);
+
+    const saving = store.save();
+    await Promise.resolve();
+    expect(api.save).not.toHaveBeenCalled();
+
+    update.resolve(makeResponse({ dirty: true }));
+    await saving;
+    expect(api.save).toHaveBeenCalledOnce();
+  });
+
+  it('stops a dependent action when a timer-started update fails', async () => {
+    const update = deferred<DocResponse>();
+    vi.mocked(api.updateDocument).mockReturnValue(update.promise);
+    editLuminaireName('Rejected');
+    vi.advanceTimersByTime(250);
+
+    const saving = store.save();
+    update.reject('invalid draft');
+    await saving;
+
+    expect(api.save).not.toHaveBeenCalled();
+    expect(store.error).toBe('invalid draft');
+  });
+
+  it('does not apply a late update to another active tab', async () => {
+    const update = deferred<DocResponse>();
+    vi.mocked(api.updateDocument).mockReturnValue(update.promise);
+    editLuminaireName('First tab edit');
+    vi.advanceTimersByTime(250);
+
+    store.tabs.push({ id: 'tab-2', title: 'second.ldt', path: '/tmp/second.ldt', dirty: false });
+    store.activeTabId = 'tab-2';
+    store.doc = { ...makeDoc(), luminaireName: 'Second tab' };
+    store.path = '/tmp/second.ldt';
+    store.dirty = false;
+    update.resolve(makeResponse({ path: '/tmp/first.ldt', dirty: true }));
+    await store.flushEdits();
+
+    expect(store.doc?.luminaireName).toBe('Second tab');
+    expect(store.path).toBe('/tmp/second.ldt');
+    expect(store.dirty).toBe(false);
+    expect(store.tabs[1]).toMatchObject({ title: 'second.ldt', dirty: false });
+    await store.close('tab-1');
+  });
+
+  it('drains an edit made while a tab switch waits for an update', async () => {
+    const first = deferred<DocResponse>();
+    const second = deferred<DocResponse>();
+    vi.mocked(api.updateDocument)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    vi.mocked(api.activateTab).mockResolvedValue({
+      document: makeResponse({ path: '/tmp/second.ldt' }),
+      tabs: [
+        { id: 'tab-1', title: 'test.ldt', path: '/tmp/test.ldt', dirty: true },
+        { id: 'tab-2', title: 'second.ldt', path: '/tmp/second.ldt', dirty: false }
+      ],
+      activeTabId: 'tab-2'
+    });
+    store.tabs.push({ id: 'tab-2', title: 'second.ldt', path: '/tmp/second.ldt', dirty: false });
+    editLuminaireName('First edit');
+    vi.advanceTimersByTime(250);
+
+    const switching = store.activateTab('tab-2');
+    editLuminaireName('Second edit');
+    first.resolve(makeResponse({ dirty: true }));
+    try {
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      expect(api.activateTab).not.toHaveBeenCalled();
+      expect(api.updateDocument).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(api.updateDocument).mock.calls[1][0].luminaireName).toBe('Second edit');
+    } finally {
+      second.resolve(makeResponse({ dirty: true }));
+      await switching;
+    }
+    expect(api.activateTab).toHaveBeenCalledOnce();
   });
 });
 

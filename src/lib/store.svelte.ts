@@ -38,6 +38,8 @@ class DocStore {
   highlightedFieldKey = $state<string | null>(null);
 
   #commitTimer: ReturnType<typeof setTimeout> | null = null;
+  #commitInFlight: Promise<boolean> | null = null;
+  #editRevision = 0;
   #highlightTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Highlights a field for a short window so the user can spot it after navigation. */
@@ -138,7 +140,10 @@ class DocStore {
   /** Closes one tab and selects the backend-chosen neighbour. */
   async close(tabId = this.activeTabId) {
     if (!tabId) return;
-    if (tabId === this.activeTabId) this.#cancelPendingCommit();
+    if (tabId === this.activeTabId) {
+      this.#cancelPendingCommit();
+      await this.#commitInFlight;
+    }
     else if (!(await this.flushEdits())) return;
     const res = await this.#run(async () => {
       return api.closeDocument(tabId);
@@ -164,6 +169,7 @@ class DocStore {
   async revert() {
     if (!this.path) return;
     this.#cancelPendingCommit();
+    await this.#commitInFlight;
     const res = await this.#run(() => api.reloadDocument());
     if (res) this.#apply(res, true);
   }
@@ -205,6 +211,7 @@ class DocStore {
 
   /** Marks the document dirty and schedules a debounced validate/recompute. */
   edited() {
+    this.#editRevision++;
     this.dirty = true;
     const active = this.tabs.find((tab) => tab.id === this.activeTabId);
     if (active) active.dirty = true;
@@ -219,19 +226,35 @@ class DocStore {
     if (!this.doc || !this.activeTabId) return true;
     const snapshot = $state.snapshot(this.doc) as EulumdatDoc;
     const tabId = this.activeTabId;
-    const res = await this.#run(() => api.updateDocument(snapshot, tabId));
-    if (!res) return false;
-    this.#apply(res, false);
-    return true;
+    const revision = this.#editRevision;
+    const previous = this.#commitInFlight;
+    const pending = (async () => {
+      // Preserve backend order when another edit arrives during an IPC update.
+      if (previous) await previous;
+      const res = await this.#run(() => api.updateDocument(snapshot, tabId));
+      if (!res) return false;
+      if (this.activeTabId === tabId && this.#editRevision === revision) {
+        this.#apply(res, false);
+      }
+      return true;
+    })();
+    this.#commitInFlight = pending;
+    try {
+      return await pending;
+    } finally {
+      if (this.#commitInFlight === pending) this.#commitInFlight = null;
+    }
   }
 
   /** Commits a pending debounced edit immediately so Rust holds the latest doc.
    *  Operations that read or replace the backend model must stop when this
    *  resolves false, or they would act on the stale model. */
   async flushEdits(): Promise<boolean> {
-    if (!this.#commitTimer) return true;
-    this.#cancelPendingCommit();
-    return this.commit();
+    while (this.#commitTimer || this.#commitInFlight) {
+      const pending = this.#commitTimer ? this.commit() : this.#commitInFlight;
+      if (pending && !(await pending)) return false;
+    }
+    return true;
   }
 
   #cancelPendingCommit() {
