@@ -388,7 +388,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 0 31px 0 11px;
+    padding: 0 8px 0 11px;
     border: 1px solid transparent;
     border-bottom: 0;
     border-radius: 7px 7px 0 0;
@@ -399,15 +399,18 @@
     touch-action: none;
     cursor: grab;
     position: relative;
+    --tab-close-bg: var(--bg-elev);
   }
   .tab:hover {
     background: var(--bg-sunken);
     color: var(--text);
+    --tab-close-bg: var(--bg-sunken);
   }
   .tab.active {
     background: var(--bg);
     border-color: var(--border);
     color: var(--text);
+    --tab-close-bg: var(--bg);
   }
   .tab.dragging {
     opacity: 0.25;
@@ -459,12 +462,15 @@
     padding: 0;
     border: 0;
     border-radius: 50%;
-    background: transparent;
+    background: var(--tab-close-bg);
     color: var(--text-faint);
     font-size: 16px;
     line-height: 1;
     opacity: 0;
     pointer-events: none;
+  }
+  .dot + .tab-close {
+    right: 22px;
   }
   .tab:hover .tab-close,
   .tab:focus-within .tab-close {
@@ -472,7 +478,7 @@
     pointer-events: auto;
   }
   .tab-close:hover {
-    background: var(--sel);
+    box-shadow: inset 0 0 0 20px var(--sel);
     color: var(--text);
   }
   .title-drag-space {
