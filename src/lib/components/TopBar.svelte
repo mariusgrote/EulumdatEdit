@@ -11,6 +11,7 @@
     saveDocumentAs
   } from '$lib/documentActions';
   import { ask } from '@tauri-apps/plugin-dialog';
+  import { TabPointerDragSession, type TabPointerDrag } from '$lib/tabPointerDrag';
   import {
     getAllWebviewWindows,
     getCurrentWebviewWindow
@@ -45,6 +46,7 @@
 
   function onWindowKeydown(event: KeyboardEvent) {
     if (event.key !== 'Escape') return;
+    cancelTabDrag();
     tabMenuElement?.removeAttribute('open');
     fileMenuElement?.removeAttribute('open');
   }
@@ -79,14 +81,11 @@
   const motionDuration = () =>
     window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 170;
 
-  type TabDrag = {
-    tabId: string;
-  };
-  let tabDrag = $state<TabDrag | null>(null);
+  let tabDrag = $state<TabPointerDrag | null>(null);
+  const dragSession = new TabPointerDragSession();
   let dropIndex = $state<number | null>(null);
-  let lastDragPoint: { x: number; y: number; at: number } | null = null;
-  let grabOffset = { x: 0, y: 0 };
-  const tabDragType = 'application/x-eulumdat-tab';
+  let suppressClick = false;
+  let capturedTab: HTMLElement | null = null;
 
   function tabInsertionIndex(clientX: number): number {
     const tabs = [...document.querySelectorAll<HTMLElement>('[data-tab-id]')];
@@ -98,63 +97,48 @@
   }
 
   function onTabPointerDown(event: PointerEvent, tabId: string) {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || !event.isPrimary) return;
     const target = event.currentTarget as HTMLElement;
-    const rect = target.getBoundingClientRect();
-    grabOffset = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    target.setPointerCapture(event.pointerId);
+    capturedTab = target;
+    dragSession.start(tabId, event);
+    tabDrag = dragSession.current;
   }
 
-  function onTabDragStart(event: DragEvent, tabId: string) {
-    const transfer = event.dataTransfer;
-    if (!transfer) return;
-    const tab = store.tabs.find((item) => item.id === tabId);
-    if (!tab) return;
-    window.getSelection()?.removeAllRanges();
-    transfer.effectAllowed = 'move';
-    transfer.setData(tabDragType, tabId);
-    transfer.setData('text/plain', tab.title);
-    transfer.setDragImage(event.currentTarget as HTMLElement, grabOffset.x, grabOffset.y);
-    lastDragPoint = null;
-    tabDrag = { tabId };
-  }
-
-  function onTabDrag(event: DragEvent) {
-    if (event.screenX || event.screenY) {
-      lastDragPoint = { x: event.screenX, y: event.screenY, at: performance.now() };
-    }
-  }
-
-  function onWindowDragOver(event: DragEvent) {
-    if (!event.dataTransfer?.types.includes(tabDragType)) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
+  function cancelTabDrag() {
     if (!tabDrag) return;
-    const strip = document.querySelector<HTMLElement>('.tabs')?.getBoundingClientRect();
-    dropIndex = strip && event.clientY >= strip.top && event.clientY <= strip.bottom
+    const pointerId = tabDrag.pointerId;
+    dragSession.cancel();
+    tabDrag = null;
+    dropIndex = null;
+    if (capturedTab?.hasPointerCapture(pointerId)) capturedTab.releasePointerCapture(pointerId);
+    capturedTab = null;
+  }
+
+  function onTabPointerMove(event: PointerEvent) {
+    if (!tabDrag || event.pointerId !== tabDrag.pointerId) return;
+    tabDrag = dragSession.move(event);
+    if (!tabDrag?.dragging) return;
+    const strip = tabsElement.getBoundingClientRect();
+    dropIndex = event.clientY >= strip.top && event.clientY <= strip.bottom &&
+      event.clientX >= strip.left && event.clientX <= strip.right
       ? tabInsertionIndex(event.clientX)
       : null;
   }
 
-  function onWindowDrop(event: DragEvent) {
-    if (!event.dataTransfer?.types.includes(tabDragType)) return;
-    event.preventDefault();
-    if (tabDrag && dropIndex !== null) dropIndex = tabInsertionIndex(event.clientX);
+  function onTabPointerCancel(event: PointerEvent) {
+    if (tabDrag?.pointerId === event.pointerId) cancelTabDrag();
   }
 
-  async function onTabDragEnd(event: DragEvent) {
-    if (!tabDrag) return;
-    const drag = tabDrag;
+  async function onTabPointerUp(event: PointerEvent) {
+    if (!tabDrag || event.pointerId !== tabDrag.pointerId) return;
+    const drag = dragSession.finish(event);
     const insertionIndex = dropIndex;
-    tabDrag = null;
-    dropIndex = null;
-    const last = lastDragPoint;
-    lastDragPoint = null;
-    const end = { x: event.screenX, y: event.screenY };
-    // WebKit can offset dragend coordinates by the drag image size on macOS.
-    if (last && performance.now() - last.at < 500 && Math.hypot(end.x - last.x, end.y - last.y) > 80) {
-      end.x = last.x;
-      end.y = last.y;
-    }
+    cancelTabDrag();
+    if (!drag) return;
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; }, 0);
+    const end = { x: drag.screenX, y: drag.screenY };
 
     const current = getCurrentWebviewWindow();
     const currentPosition = await current.outerPosition();
@@ -206,8 +190,10 @@
 </script>
 
 <svelte:window
-  ondragover={onWindowDragOver}
-  ondrop={onWindowDrop}
+  onpointermove={onTabPointerMove}
+  onpointerup={onTabPointerUp}
+  onpointercancel={onTabPointerCancel}
+  onlostpointercapture={onTabPointerCancel}
   onclick={onWindowClick}
   onkeydown={onWindowKeydown}
 />
@@ -218,10 +204,9 @@
       <div
         class="tab"
         class:active={tab.id === store.activeTabId}
-        class:dragging={tabDrag?.tabId === tab.id}
-        class:drop-before={tabDrag && dropIndex === index && tabDrag.tabId !== tab.id}
+        class:dragging={tabDrag?.dragging && tabDrag.tabId === tab.id}
+        class:drop-before={tabDrag?.dragging && dropIndex === index && tabDrag.tabId !== tab.id}
         data-tab-id={tab.id}
-        draggable="true"
         title={tab.path || tab.title}
         role="tab"
         tabindex="0"
@@ -229,10 +214,7 @@
         animate:flip={{ duration: motionDuration }}
         out:slide={{ axis: 'x', duration: motionDuration() }}
         onpointerdown={(event) => onTabPointerDown(event, tab.id)}
-        ondragstart={(event) => onTabDragStart(event, tab.id)}
-        ondrag={onTabDrag}
-        ondragend={onTabDragEnd}
-        onclick={() => store.activateTab(tab.id)}
+        onclick={() => { if (!suppressClick) store.activateTab(tab.id); }}
         onselectstart={(event) => event.preventDefault()}
         onkeydown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') store.activateTab(tab.id);
@@ -260,7 +242,7 @@
     {/each}
     <div
       class="title-drag-space"
-      class:drop-end={tabDrag && dropIndex === store.tabs.length}
+      class:drop-end={tabDrag?.dragging && dropIndex === store.tabs.length}
       data-tauri-drag-region
     ></div>
   </div>
@@ -351,6 +333,11 @@
       </svg>
     </button>
   </div>
+  {#if tabDrag?.dragging}
+    <div class="tab-drag-preview" style:left={`${tabDrag.clientX + 12}px`} style:top={`${tabDrag.clientY + 12}px`}>
+      {store.tabs.find((tab) => tab.id === tabDrag?.tabId)?.title}
+    </div>
+  {/if}
 </header>
 
 <style>
@@ -415,6 +402,21 @@
   .tab.dragging {
     opacity: 0.25;
     cursor: grabbing;
+  }
+  .tab-drag-preview {
+    position: fixed;
+    z-index: 100;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 8px 11px;
+    border: 1px solid var(--border-strong);
+    border-radius: 7px;
+    background: var(--bg-elev);
+    color: var(--text);
+    box-shadow: var(--shadow-pop);
+    pointer-events: none;
   }
   .tab.drop-before::before,
   .title-drag-space.drop-end::before {
