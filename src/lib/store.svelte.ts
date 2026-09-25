@@ -99,17 +99,6 @@ class DocStore {
     }
   }
 
-  /** Guards actions that would discard in-progress edits (close, quit).
-   *  Returns true when it is safe to proceed: either the document is clean or
-   *  the user confirmed discarding their unsaved changes. */
-  async confirmDiscardChanges(): Promise<boolean> {
-    if (!this.dirty) return true;
-    return ask('You have unsaved changes that will be lost. Continue?', {
-      title: 'Unsaved changes',
-      kind: 'warning'
-    });
-  }
-
   async confirmCloseWindow(): Promise<boolean> {
     const dirtyTabs = this.tabs.filter((tab) => tab.dirty);
     if (dirtyTabs.length === 0) return true;
@@ -159,13 +148,13 @@ class DocStore {
   }
 
   async moveTab(tabId: string, targetWindow: string, targetIndex?: number) {
-    if (tabId === this.activeTabId && !(await this.flushEdits())) return;
+    if (!(await this.flushEdits())) return;
     const res = await this.#run(() => api.moveTab(tabId, targetWindow, targetIndex));
     if (res) this.#applyWindow(res);
   }
 
   async detachTab(tabId: string, x: number, y: number) {
-    if (tabId === this.activeTabId && !(await this.flushEdits())) return;
+    if (!(await this.flushEdits())) return;
     const res = await this.#run(() => api.detachTab(tabId, x, y));
     if (res) this.#applyWindow(res);
   }

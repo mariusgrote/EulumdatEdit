@@ -7,6 +7,8 @@ vi.mock('./api', () => ({
   reloadDocument: vi.fn(),
   currentDocument: vi.fn(),
   closeDocument: vi.fn(),
+  moveTab: vi.fn(),
+  detachTab: vi.fn(),
   updateDocument: vi.fn(),
   save: vi.fn(),
   saveAs: vi.fn(),
@@ -366,4 +368,68 @@ describe('document replacement preserves the pending edit', () => {
     resolveClose(emptyWindow());
     await closing;
   });
+});
+
+describe('moving an inactive tab preserves the active draft', () => {
+  const operations = [
+    {
+      name: 'moveTab',
+      run: () => store.moveTab('tab-2', 'other-window', 0),
+      call: () => api.moveTab
+    },
+    {
+      name: 'detachTab',
+      run: () => store.detachTab('tab-2', 100, 200),
+      call: () => api.detachTab
+    }
+  ];
+
+  beforeEach(() => {
+    store.tabs.push({ id: 'tab-2', title: 'other.ldt', path: '/tmp/other.ldt', dirty: false });
+  });
+
+  it.each(operations)(
+    '$name commits the active draft before applying the window response',
+    async ({ run, call }) => {
+      let backendName = 'Luminaire';
+      vi.mocked(api.updateDocument).mockImplementation(async (doc) => {
+        backendName = doc.luminaireName;
+        return makeResponse({ doc, dirty: true });
+      });
+      vi.mocked(api.moveTab).mockImplementation(async () =>
+        makeWindowResponse({ doc: { ...makeDoc(), luminaireName: backendName }, dirty: true })
+      );
+      vi.mocked(api.detachTab).mockImplementation(async () =>
+        makeWindowResponse({ doc: { ...makeDoc(), luminaireName: backendName }, dirty: true })
+      );
+      editLuminaireName('Keep active draft');
+
+      await run();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(api.updateDocument).toHaveBeenCalledOnce();
+      expect(vi.mocked(api.updateDocument).mock.calls[0][1]).toBe('tab-1');
+      expect(order(vi.mocked(api.updateDocument))).toBeLessThan(order(vi.mocked(call())));
+      expect(store.doc?.luminaireName).toBe('Keep active draft');
+      expect(store.dirty).toBe(true);
+    }
+  );
+
+  it.each(operations)(
+    '$name leaves the draft and tabs alone when its flush fails',
+    async ({ run, call }) => {
+      vi.mocked(api.updateDocument).mockRejectedValue('invalid draft');
+      editLuminaireName('Uncommitted draft');
+
+      await run();
+
+      expect(api.updateDocument).toHaveBeenCalledOnce();
+      expect(call()).not.toHaveBeenCalled();
+      expect(store.doc?.luminaireName).toBe('Uncommitted draft');
+      expect(store.tabs.map((tab) => tab.id)).toEqual(['tab-1', 'tab-2']);
+      expect(store.activeTabId).toBe('tab-1');
+      expect(store.dirty).toBe(true);
+      expect(store.error).toBe('invalid draft');
+    }
+  );
 });
