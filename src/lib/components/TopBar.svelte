@@ -37,6 +37,7 @@
   let tabsElement: HTMLDivElement;
   let tabMenuElement = $state<HTMLDetailsElement>();
   let fileMenuElement = $state<HTMLDetailsElement>();
+  let isMacOS = $state(false);
 
   function onWindowClick(event: MouseEvent) {
     if (!(event.target instanceof Node)) return;
@@ -73,6 +74,7 @@
   });
 
   onMount(() => {
+    isMacOS = /Macintosh|Mac OS X/.test(navigator.userAgent);
     const observer = new ResizeObserver(showActiveTab);
     observer.observe(tabsElement);
     return () => observer.disconnect();
@@ -198,7 +200,7 @@
   onkeydown={onWindowKeydown}
 />
 
-<header class="topbar" data-tauri-drag-region>
+<header class="topbar" class:macos={isMacOS} data-tauri-drag-region>
   <div class="tabs" role="tablist" aria-label="Open documents" bind:this={tabsElement}>
     {#each store.tabs as tab, index (tab.id)}
       <div
@@ -345,11 +347,14 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    /* leave room for the macOS traffic lights (titleBarStyle: Overlay) */
-    padding: 0 14px 0 82px;
+    padding: 0 14px;
     height: 46px;
     background: var(--bg-elev);
     border-bottom: 1px solid var(--border);
+  }
+  .topbar.macos {
+    /* Leave room for the macOS traffic lights (titleBarStyle: Overlay). */
+    padding-left: 82px;
   }
   .tabs {
     flex: 1;
