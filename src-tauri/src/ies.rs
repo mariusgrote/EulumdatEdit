@@ -251,11 +251,9 @@ pub fn serialize(model: &Eulumdat) -> Result<String, String> {
     model
         .validate(ValidationSettings::unrestricted())
         .map_err(|e| e.to_string())?;
-    let lamp_flux: f64 = model
-        .lamps
-        .iter()
-        .map(|lamp| lamp.total_luminous_flux)
-        .sum();
+    // LDT lamp sets are alternative configurations; the core uses the first.
+    let lamp = model.lamps.first().ok_or("IES export needs a lamp set")?;
+    let lamp_flux = lamp.total_luminous_flux;
     if !lamp_flux.is_finite()
         || lamp_flux <= 0.0
         || !model.conversion_factor.is_finite()
@@ -320,11 +318,7 @@ pub fn serialize(model: &Eulumdat) -> Result<String, String> {
                 .last()
                 .is_some_and(|last| !near(*last, 360.0)));
     let horizontal_count = indices.len() + usize::from(append_c360);
-    let watts: f64 = model
-        .lamps
-        .iter()
-        .map(|lamp| lamp.wattage_including_ballast)
-        .sum();
+    let watts = lamp.wattage_including_ballast;
     out.push_str(&format!(
         "1 -1 1 {} {} 1 2\n{} {} {}\n1 1 {}\n",
         model.gamma_angles.len(),
@@ -440,6 +434,20 @@ mod tests {
     }
 
     #[test]
+    fn exports_only_the_first_alternative_lamp_set() {
+        let mut model = parse(&fixture("0", 1, "100 50 10", "1000"), "lamp.ies").unwrap();
+        let mut alternative = model.lamps[0].clone();
+        alternative.total_luminous_flux = 3000.0;
+        alternative.wattage_including_ballast = 36.0;
+        model.lamps.push(alternative);
+
+        let exported = serialize(&model).unwrap();
+        let data: Vec<_> = exported.split("TILT=NONE\n").nth(1).unwrap().split_whitespace().collect();
+        assert_eq!(data[12], "12"); // selected lamp set's watts
+        assert_eq!(data[17], "100"); // selected lamp set's candela at C0, gamma 0
+    }
+
+    #[test]
     fn rejects_unsupported_type_and_tilt() {
         let input = fixture("0 90", 2, "100 50 10 200 80 20", "1000");
         assert!(
@@ -530,16 +538,8 @@ mod tests {
                     .all(|(a, b)| a.len() == b.len()),
                 "{path:?}"
             );
-            let original_flux: f64 = model
-                .lamps
-                .iter()
-                .map(|lamp| lamp.total_luminous_flux)
-                .sum();
-            let exported_flux: f64 = reparsed
-                .lamps
-                .iter()
-                .map(|lamp| lamp.total_luminous_flux)
-                .sum();
+            let original_flux = model.lamps[0].total_luminous_flux;
+            let exported_flux = reparsed.lamps[0].total_luminous_flux;
             for (original, exported) in model
                 .intensities
                 .iter()
