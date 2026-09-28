@@ -947,7 +947,9 @@ mod tests {
         let saved = write_document(&model, &path).expect("IES file should be written");
         let (reloaded, _) = load(&path.to_string_lossy()).expect("IES file should open");
         assert_eq!(saved, reloaded);
-        assert_eq!(saved.lamps[0].total_luminous_flux, 1000.0);
+        let expected_output = model.total_output() * model.lamps[0].total_luminous_flux / 100.0;
+        assert!((saved.lamps[0].total_luminous_flux - expected_output).abs() < 1e-9);
+        assert_eq!(saved.light_output_ratio, 100.0);
         assert_ne!(saved.intensities, model.intensities);
         std::fs::remove_file(path).unwrap();
     }

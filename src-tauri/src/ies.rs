@@ -192,9 +192,11 @@ pub fn parse(text: &str, file_name: &str) -> Result<Eulumdat, String> {
             "IES candela values and factors must be non-negative, with positive factors".into(),
         );
     }
+    let absolute = near(lumens_per_lamp, -1.0);
     let lamp_flux = if lumens_per_lamp > 0.0 {
         lumens_per_lamp * lamp_count as f64
-    } else if near(lumens_per_lamp, -1.0) {
+    } else if absolute {
+        // Temporary cd/klm basis; the measured luminaire flux is set below.
         1000.0
     } else {
         return Err("IES lumens per lamp must be positive or -1 for absolute photometry".into());
@@ -289,6 +291,28 @@ pub fn parse(text: &str, file_name: &str) -> Result<Eulumdat, String> {
             intensities: rows,
         })
         .map_err(|e| e.to_string())?;
+    let output_ratio = model.total_output();
+    if !output_ratio.is_finite() {
+        return Err("IES integrated luminous output is invalid".into());
+    }
+    if absolute {
+        // Absolute IES has no lamp-flux denominator. Treat integrated luminaire
+        // lumens as the model's flux basis, then preserve measured candela.
+        let output_lumens = output_ratio * 10.0;
+        if !output_lumens.is_finite() || output_lumens <= 0.0 {
+            return Err("Absolute IES needs positive luminous output".into());
+        }
+        model.lamps[0].total_luminous_flux = output_lumens;
+        for row in &mut model.intensities {
+            for intensity in row {
+                *intensity *= 1000.0 / output_lumens;
+            }
+        }
+        model.light_output_ratio = 100.0;
+    } else {
+        // The distribution is cd per 1000 declared lamp lumens.
+        model.light_output_ratio = output_ratio;
+    }
     model.downward_flux_fraction = model.calculated_downward_flux_fraction();
     model
         .validate(ValidationSettings::unrestricted())
@@ -424,6 +448,23 @@ pub fn serialize(model: &Eulumdat) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    fn candela(model: &Eulumdat, plane: usize, gamma: usize) -> f64 {
+        model.intensities[plane][gamma]
+            * model.conversion_factor
+            * model.lamps[0].total_luminous_flux
+            / 1000.0
+    }
+
+    fn assert_same_candela(first: &Eulumdat, second: &Eulumdat) {
+        for (plane, row) in first.intensities.iter().enumerate() {
+            for gamma in 0..row.len() {
+                let before = candela(first, plane, gamma);
+                let after = candela(second, plane, gamma);
+                assert!((before - after).abs() <= before.abs().max(1.0) * 1e-10);
+            }
+        }
+    }
+
     fn fixture(horizontal: &str, count: usize, rows: &str, lumens: &str) -> String {
         format!("IESNA:LM-63-2002\n[MANUFAC] Maker\n[LUMINAIRE] Test lamp\nTILT=NONE\n1 {lumens} 1 3 {count} 1 2\n0.2 0.4 0.1\n1 1 12\n0 90 180\n{horizontal}\n{rows}\n")
     }
@@ -441,7 +482,7 @@ mod tests {
         assert_eq!(model.luminaire_width, 0.0);
         let exported = serialize(&model).unwrap();
         let reparsed = parse(&exported, "copy.ies").unwrap();
-        assert_eq!(reparsed.intensities, model.intensities);
+        assert_same_candela(&model, &reparsed);
         assert_eq!(reparsed.c_planes, model.c_planes);
     }
 
@@ -536,7 +577,7 @@ mod tests {
         assert_ne!(model.intensities[0], model.intensities[4]);
         let exported = serialize(&model).unwrap();
         let reparsed = parse(&exported, "again.ies").unwrap();
-        assert_eq!(reparsed.intensities, model.intensities);
+        assert_same_candela(&model, &reparsed);
     }
 
     #[test]
@@ -565,6 +606,33 @@ mod tests {
     }
 
     #[test]
+    fn relative_ies_output_ratio_uses_declared_lamp_lumens() {
+        // A constant 100 cd over the sphere emits 4π × 100 lm.
+        let model = parse(&fixture("0", 1, "100 100 100", "5000"), "relative.ies").unwrap();
+        let expected = 4.0 * std::f64::consts::PI * 100.0 / 5000.0 * 100.0;
+        assert!((model.light_output_ratio - expected).abs() < 1e-10);
+        assert_eq!(model.lamps[0].total_luminous_flux, 5000.0);
+        assert_eq!(model.intensities[0][0], 20.0);
+    }
+
+    #[test]
+    fn absolute_ies_uses_integrated_luminaire_flux_as_basis() {
+        let model = parse(&fixture("0", 1, "100 100 100", "-1"), "absolute.ies").unwrap();
+        let output_lumens = 4.0 * std::f64::consts::PI * 100.0;
+        assert!((model.lamps[0].total_luminous_flux - output_lumens).abs() < 1e-10);
+        assert_eq!(model.light_output_ratio, 100.0);
+        assert!((model.intensities[0][0] * output_lumens / 1000.0 - 100.0).abs() < 1e-10);
+        let exported = serialize(&model).unwrap();
+        let data: Vec<_> = exported
+            .split("TILT=NONE\n")
+            .nth(1)
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        assert!((data[17].parse::<f64>().unwrap() - 100.0).abs() < 1e-10);
+    }
+
+    #[test]
     fn exports_only_the_first_alternative_lamp_set() {
         let mut model = parse(&fixture("0", 1, "100 50 10", "1000"), "lamp.ies").unwrap();
         let mut alternative = model.lamps[0].clone();
@@ -573,7 +641,12 @@ mod tests {
         model.lamps.push(alternative);
 
         let exported = serialize(&model).unwrap();
-        let data: Vec<_> = exported.split("TILT=NONE\n").nth(1).unwrap().split_whitespace().collect();
+        let data: Vec<_> = exported
+            .split("TILT=NONE\n")
+            .nth(1)
+            .unwrap()
+            .split_whitespace()
+            .collect();
         assert_eq!(data[12], "12"); // selected lamp set's watts
         assert_eq!(data[17], "100"); // selected lamp set's candela at C0, gamma 0
     }
@@ -619,10 +692,10 @@ mod tests {
             .unwrap();
         let exported = serialize(&model).unwrap();
         let reparsed = parse(&exported, "copy.ies").unwrap();
-        assert_eq!(reparsed.intensities[0][0], 100.0);
-        assert_eq!(reparsed.intensities[1][0], 200.0);
-        assert_eq!(reparsed.intensities[2][0], 100.0);
-        assert_eq!(reparsed.intensities[3][0], 300.0);
+        let flux_klm = model.lamps[0].total_luminous_flux / 1000.0;
+        for (plane, intensity) in [100.0, 200.0, 100.0, 300.0].iter().enumerate() {
+            assert!((candela(&reparsed, plane, 0) - intensity * flux_klm).abs() < 1e-10);
+        }
     }
 
     /// Optional compatibility check for downloaded IES files kept outside the
