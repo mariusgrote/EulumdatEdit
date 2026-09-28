@@ -7,8 +7,8 @@ export function newFromTemplate(): Promise<WindowStateResponse> {
   return invoke('new_from_template');
 }
 
-export function openFile(path: string): Promise<WindowStateResponse> {
-  return invoke('open_file', { path });
+export function openFile(path: string, focusExisting = true): Promise<WindowStateResponse> {
+  return invoke('open_file', { path, focusExisting });
 }
 
 export function reloadDocument(): Promise<DocResponse> {

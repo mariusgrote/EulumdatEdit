@@ -301,6 +301,84 @@ describe('debounced commit', () => {
 });
 
 describe('flush before backend model operations', () => {
+  it('preserves an edit made while the next file in a batch opens', async () => {
+    const second = deferred<WindowStateResponse>();
+    vi.mocked(api.currentDocument).mockImplementation(async () => ({
+      document: makeResponse({ path: '/tmp/second.ldt' }),
+      tabs: [
+        { id: 'tab-1', title: 'test.ldt', path: '/tmp/test.ldt', dirty: false },
+        { id: 'tab-2', title: 'first.ldt', path: '/tmp/first.ldt', dirty: true },
+        { id: 'tab-3', title: 'second.ldt', path: '/tmp/second.ldt', dirty: false }
+      ],
+      activeTabId: 'tab-3'
+    }));
+    vi.mocked(api.openFile)
+      .mockResolvedValueOnce({
+        document: makeResponse({ path: '/tmp/first.ldt' }),
+        tabs: [
+          { id: 'tab-1', title: 'test.ldt', path: '/tmp/test.ldt', dirty: false },
+          { id: 'tab-2', title: 'first.ldt', path: '/tmp/first.ldt', dirty: false }
+        ],
+        activeTabId: 'tab-2'
+      })
+      .mockReturnValueOnce(second.promise);
+
+    const opening = store.openMany(['/tmp/first.ldt', '/tmp/second.ldt']);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(store.path).toBe('/tmp/first.ldt');
+    editLuminaireName('Edited during batch');
+
+    second.resolve({
+      document: makeResponse({ path: '/tmp/second.ldt' }),
+      tabs: [
+        { id: 'tab-1', title: 'test.ldt', path: '/tmp/test.ldt', dirty: false },
+        { id: 'tab-2', title: 'first.ldt', path: '/tmp/first.ldt', dirty: false },
+        { id: 'tab-3', title: 'second.ldt', path: '/tmp/second.ldt', dirty: false }
+      ],
+      activeTabId: 'tab-3'
+    });
+    await opening;
+
+    expect(api.updateDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ luminaireName: 'Edited during batch' }),
+      'tab-2'
+    );
+    expect(store.path).toBe('/tmp/second.ldt');
+    expect(store.tabs[1].dirty).toBe(true);
+  });
+
+  it('keeps the edited tab visible when its update fails during a batch', async () => {
+    const second = deferred<WindowStateResponse>();
+    vi.mocked(api.openFile)
+      .mockResolvedValueOnce({
+        document: makeResponse({ path: '/tmp/first.ldt' }),
+        tabs: [
+          { id: 'tab-1', title: 'test.ldt', path: '/tmp/test.ldt', dirty: false },
+          { id: 'tab-2', title: 'first.ldt', path: '/tmp/first.ldt', dirty: false }
+        ],
+        activeTabId: 'tab-2'
+      })
+      .mockReturnValueOnce(second.promise);
+    vi.mocked(api.updateDocument).mockRejectedValueOnce('invalid draft');
+    vi.mocked(api.activateTab).mockResolvedValue(makeWindowResponse({ path: '/tmp/first.ldt' }));
+
+    const opening = store.openMany(['/tmp/first.ldt', '/tmp/second.ldt', '/tmp/third.ldt']);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    editLuminaireName('Draft to preserve');
+    second.resolve({
+      document: makeResponse({ path: '/tmp/second.ldt' }),
+      tabs: [],
+      activeTabId: 'tab-3'
+    });
+    await opening;
+
+    expect(api.activateTab).toHaveBeenCalledWith('tab-2');
+    expect(api.openFile).toHaveBeenCalledTimes(2);
+    expect(store.doc?.luminaireName).toBe('Draft to preserve');
+    expect(store.path).toBe('/tmp/first.ldt');
+    expect(store.error).toBe('invalid draft');
+  });
+
   it('save() commits the pending edit first and the old timer never fires', async () => {
     editLuminaireName('Saved name');
     await store.save();

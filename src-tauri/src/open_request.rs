@@ -32,13 +32,12 @@ pub fn deliver(app: &AppHandle, paths: &[PathBuf]) {
             &paths,
         );
     } else {
+        // Keep the queue locked while creating the first window. Its frontend
+        // may call take_pending_open as soon as the native builder returns.
+        let mut pending = state.pending_open.lock().unwrap();
         for (index, path) in paths.iter().enumerate() {
             if crate::commands::open_path_window(app, Path::new(path)).is_ok() {
-                state
-                    .pending_open
-                    .lock()
-                    .unwrap()
-                    .extend(paths[index + 1..].iter().cloned());
+                pending.extend(paths[index + 1..].iter().cloned());
                 break;
             }
         }

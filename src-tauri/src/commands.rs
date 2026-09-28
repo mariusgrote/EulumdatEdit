@@ -230,6 +230,7 @@ pub fn new_from_template(
 #[tauri::command]
 pub fn open_file(
     path: String,
+    focus_existing: bool,
     window: WebviewWindow,
     app: AppHandle,
     state: State<'_, AppState>,
@@ -244,8 +245,10 @@ pub fn open_file(
     if let Some((label, response)) = existing {
         let response = response?;
         if let Some(existing_window) = app.get_webview_window(&label) {
-            let _ = existing_window.unminimize();
-            let _ = existing_window.set_focus();
+            if focus_existing {
+                let _ = existing_window.unminimize();
+                let _ = existing_window.set_focus();
+            }
             let _ = existing_window.emit("workspace-changed", ());
         }
         return Ok(response);

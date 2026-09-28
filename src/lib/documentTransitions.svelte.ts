@@ -110,9 +110,35 @@ export class DocumentTransitions {
       const failures: string[] = [];
       this.busy = true;
       try {
-        for (const path of paths) {
+        for (const [index, path] of paths.entries()) {
           try {
-            this.#applyWindow(await api.openFile(path));
+            const tabId = this.activeTabId;
+            const revision = this.#editRevision;
+            // Only the last selected file may bring an already-open window forward.
+            const response = await (index === paths.length - 1
+              ? api.openFile(path)
+              : api.openFile(path, false));
+            if (this.#editRevision === revision && !this.#pendingEdit) {
+              this.#applyWindow(response);
+              continue;
+            }
+            if (!(await this.flushEdits())) {
+              if (tabId) await api.activateTab(tabId);
+              break;
+            }
+            // A draft may have changed the tab summary in the open response.
+            // Keep draining until the backend snapshot matches the latest edit.
+            let current: WindowStateResponse;
+            do {
+              const currentRevision = this.#editRevision;
+              current = await api.currentDocument();
+              if (this.#editRevision === currentRevision && !this.#pendingEdit) break;
+              if (!(await this.flushEdits())) {
+                if (tabId) await api.activateTab(tabId);
+                return;
+              }
+            } while (true);
+            this.#applyWindow(current);
           } catch (e) {
             failures.push(paths.length === 1 ? String(e) : `${path}: ${String(e)}`);
           }

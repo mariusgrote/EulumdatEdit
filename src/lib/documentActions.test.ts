@@ -146,7 +146,7 @@ describe('opening documents', () => {
       multiple: true,
       filters: [{ name: 'Photometric files', extensions: ['ldt', 'ies'] }]
     });
-    expect(vi.mocked(api.openFile).mock.calls).toEqual([['/tmp/a.ldt'], ['/tmp/b.ies']]);
+    expect(vi.mocked(api.openFile).mock.calls).toEqual([['/tmp/a.ldt', false], ['/tmp/b.ies']]);
     expect(store.path).toBe('/tmp/b.ies');
   });
 
@@ -157,7 +157,7 @@ describe('opening documents', () => {
 
     await openPaths(['/tmp/bad.ldt', '/tmp/good.ies']);
 
-    expect(vi.mocked(api.openFile).mock.calls).toEqual([['/tmp/bad.ldt'], ['/tmp/good.ies']]);
+    expect(vi.mocked(api.openFile).mock.calls).toEqual([['/tmp/bad.ldt', false], ['/tmp/good.ies']]);
     expect(store.path).toBe('/tmp/good.ies');
     expect(store.error).toBe('/tmp/bad.ldt: invalid file');
   });
