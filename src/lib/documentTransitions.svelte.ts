@@ -32,11 +32,16 @@ export class DocumentTransitions {
   #saveInFlight: Promise<void> | null = null;
   #writeInFlight: Promise<DocResponse | null> | null = null;
   #editRevision = 0;
+  /** A failed update must be retried before any operation uses the backend model. */
+  #pendingEdit = false;
 
   /** Applies a backend response. `replaceDoc` is false during live edits so the
    *  user's in-progress input isn't clobbered by the round-tripped copy. */
   #apply(res: DocResponse, replaceDoc: boolean) {
-    if (replaceDoc) this.doc = res.doc;
+    if (replaceDoc) {
+      this.doc = res.doc;
+      this.#pendingEdit = false;
+    }
     this.warnings = res.warnings;
     this.photometry = res.photometry;
     this.ugr = res.ugr;
@@ -54,6 +59,7 @@ export class DocumentTransitions {
 
   #clearDocument() {
     this.doc = null;
+    this.#pendingEdit = false;
     this.warnings = [];
     this.photometry = null;
     this.ugr = null;
@@ -238,6 +244,7 @@ export class DocumentTransitions {
   /** Marks the document dirty and schedules a debounced validate/recompute. */
   edited() {
     this.#editRevision++;
+    this.#pendingEdit = true;
     this.dirty = true;
     const active = this.tabs.find((tab) => tab.id === this.activeTabId);
     if (active) active.dirty = true;
@@ -257,11 +264,12 @@ export class DocumentTransitions {
     const write = this.#writeInFlight;
     const pending = (async () => {
       // Preserve backend order, including edits made during a save.
-      if (previous && !(await previous)) return false;
+      if (previous) await previous;
       if (write) await write;
       const res = await this.#run(() => api.updateDocument(snapshot, tabId));
       if (!res) return false;
       if (this.activeTabId === tabId && this.#editRevision === revision) {
+        this.#pendingEdit = false;
         this.#apply(res, false);
       }
       return true;
@@ -278,8 +286,10 @@ export class DocumentTransitions {
    *  Operations that read or replace the backend model must stop when this
    *  resolves false, or they would act on the stale model. */
   async flushEdits(): Promise<boolean> {
-    while (this.#commitTimer || this.#commitInFlight) {
-      const pending = this.#commitTimer ? this.commit() : this.#commitInFlight;
+    while (this.#commitTimer || this.#commitInFlight || this.#pendingEdit) {
+      const pending = this.#commitTimer || !this.#commitInFlight
+        ? this.commit()
+        : this.#commitInFlight;
       if (pending && !(await pending)) return false;
     }
     return true;

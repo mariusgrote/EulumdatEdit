@@ -209,9 +209,12 @@ describe('debounced commit', () => {
     expect(store.error).toBe('invalid draft');
   });
 
-  it('stops a queued update and save when the earlier update fails', async () => {
+  it('commits a corrected draft even when an earlier update fails', async () => {
     const update = deferred<DocResponse>();
     vi.mocked(api.updateDocument).mockReturnValueOnce(update.promise);
+    vi.mocked(api.save).mockImplementation(async () =>
+      makeResponse({ doc: vi.mocked(api.updateDocument).mock.calls[1][0] })
+    );
     editLuminaireName('First draft');
     vi.advanceTimersByTime(250);
     editLuminaireName('Second draft');
@@ -220,17 +223,33 @@ describe('debounced commit', () => {
     update.reject('invalid draft');
     await saving;
 
-    expect(api.updateDocument).toHaveBeenCalledTimes(1);
-    expect(api.save).not.toHaveBeenCalled();
+    expect(api.updateDocument).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(api.updateDocument).mock.calls[1][0].luminaireName).toBe('Second draft');
+    expect(order(vi.mocked(api.updateDocument))).toBeLessThan(order(vi.mocked(api.save)));
+    expect(api.save).toHaveBeenCalledOnce();
     expect(store.doc?.luminaireName).toBe('Second draft');
+    expect(store.error).toBeNull();
+  });
+
+  it('retries a failed update before a later save', async () => {
+    vi.mocked(api.updateDocument).mockRejectedValueOnce('invalid draft');
+    editLuminaireName('Uncommitted draft');
+
+    await store.save();
+    expect(api.save).not.toHaveBeenCalled();
     expect(store.error).toBe('invalid draft');
+
+    await store.save();
+    expect(api.updateDocument).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(api.updateDocument).mock.calls[1][0].luminaireName).toBe('Uncommitted draft');
+    expect(api.save).toHaveBeenCalledOnce();
   });
 
   it('does not apply a late update to another active tab', async () => {
     const update = deferred<DocResponse>();
     vi.mocked(api.updateDocument).mockReturnValue(update.promise);
     editLuminaireName('First tab edit');
-    vi.advanceTimersByTime(250);
+    const updating = store.commit();
 
     store.tabs.push({ id: 'tab-2', title: 'second.ldt', path: '/tmp/second.ldt', dirty: false });
     store.activeTabId = 'tab-2';
@@ -238,7 +257,7 @@ describe('debounced commit', () => {
     store.path = '/tmp/second.ldt';
     store.dirty = false;
     update.resolve(makeResponse({ path: '/tmp/first.ldt', dirty: true }));
-    await store.flushEdits();
+    await updating;
 
     expect(store.doc?.luminaireName).toBe('Second tab');
     expect(store.path).toBe('/tmp/second.ldt');
