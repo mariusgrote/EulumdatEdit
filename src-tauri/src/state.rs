@@ -41,6 +41,7 @@ pub struct DetachRollback {
     target: String,
     source_index: usize,
     source_active: Option<String>,
+    source_active_after_detach: Option<String>,
 }
 
 impl Workspace {
@@ -240,12 +241,15 @@ impl Workspace {
             .ok_or_else(|| "Tab does not belong to the source window".to_string())?;
         let source_active = window.active.clone();
         self.move_tab(id, source, target, None)?;
+        let source_active_after_detach =
+            self.window(source).and_then(|window| window.active.clone());
         Ok(DetachRollback {
             tab_id: id.to_string(),
             source: source.to_string(),
             target: target.to_string(),
             source_index,
             source_active,
+            source_active_after_detach,
         })
     }
 
@@ -256,8 +260,22 @@ impl Workspace {
         self.windows.remove(&rollback.target);
         if let Some(source) = self.windows.get_mut(&rollback.source) {
             let index = rollback.source_index.min(source.tabs.len());
-            source.tabs.insert(index, rollback.tab_id);
-            source.active = rollback.source_active;
+            source.tabs.insert(index, rollback.tab_id.clone());
+            if source.active == rollback.source_active_after_detach
+                && rollback
+                    .source_active
+                    .as_ref()
+                    .is_some_and(|id| source.tabs.contains(id))
+            {
+                source.active = rollback.source_active;
+            }
+            if !source
+                .active
+                .as_ref()
+                .is_some_and(|id| source.tabs.contains(id))
+            {
+                source.active = Some(rollback.tab_id);
+            }
         }
     }
 
@@ -407,6 +425,33 @@ mod tests {
         workspace.remove_window("target");
         assert!(workspace.doc("b").is_some());
         assert!(workspace.doc("d").is_none());
+        assert_invariants(&workspace);
+    }
+
+    #[test]
+    fn failed_detach_preserves_later_source_changes() {
+        let mut workspace = Workspace::default();
+        for id in ["a", "b", "c"] {
+            workspace.insert("source", id.into(), doc(None)).unwrap();
+        }
+        workspace.activate("source", "b").unwrap();
+        let rollback = workspace.begin_detach("b", "source", "detached").unwrap();
+        workspace.activate("source", "a").unwrap();
+        workspace.rollback_detach(rollback);
+        assert_eq!(workspace.active_id("source").unwrap(), "a");
+        assert_eq!(workspace.window("source").unwrap().tabs, ["a", "b", "c"]);
+        assert_invariants(&workspace);
+
+        let rollback = workspace.begin_detach("b", "source", "detached").unwrap();
+        workspace.close("source", Some("a")).unwrap();
+        workspace.rollback_detach(rollback);
+        assert_eq!(workspace.active_id("source").unwrap(), "c");
+        assert_invariants(&workspace);
+
+        workspace.close("source", Some("c")).unwrap();
+        let rollback = workspace.begin_detach("b", "source", "detached").unwrap();
+        workspace.rollback_detach(rollback);
+        assert_eq!(workspace.active_id("source").unwrap(), "b");
         assert_invariants(&workspace);
     }
 
