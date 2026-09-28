@@ -176,14 +176,33 @@ class DocStore {
 
   async save() {
     if (!(await this.flushEdits())) return;
+    const revision = this.#editRevision;
     const res = await this.#run(() => api.save());
-    if (res) this.#apply(res, true);
+    if (res) this.#applySave(res, revision);
   }
 
   async saveAs(path: string) {
     if (!(await this.flushEdits())) return;
+    const revision = this.#editRevision;
     const res = await this.#run(() => api.saveAs(path));
-    if (res) this.#apply(res, true);
+    if (res) this.#applySave(res, revision);
+  }
+
+  /** A save response describes the document at the time the save started.
+   *  Keep edits made during the write, while still showing a Save As path. */
+  #applySave(res: DocResponse, revision: number) {
+    if (this.#editRevision === revision) {
+      this.#apply(res, true);
+      return;
+    }
+    this.path = res.path;
+    this.dirty = true;
+    const active = this.tabs.find((tab) => tab.id === this.activeTabId);
+    if (active) {
+      active.path = res.path;
+      active.title = res.path?.split(/[\\\\/]/).pop() || 'Untitled';
+      active.dirty = true;
+    }
   }
 
   async exportIes(path: string) {

@@ -290,6 +290,24 @@ describe('flush before backend model operations', () => {
     expect(store.dirty).toBe(false);
   });
 
+  it('save() preserves an edit made while the write is pending', async () => {
+    const write = deferred<DocResponse>();
+    vi.mocked(api.save).mockReturnValue(write.promise);
+
+    const saving = store.save();
+    await Promise.resolve();
+    expect(api.save).toHaveBeenCalledOnce();
+    editLuminaireName('Typed during save');
+    write.resolve(makeResponse());
+    await saving;
+
+    expect(store.doc?.luminaireName).toBe('Typed during save');
+    expect(store.dirty).toBe(true);
+    expect(store.tabs[0].dirty).toBe(true);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(vi.mocked(api.updateDocument).mock.calls[0][0].luminaireName).toBe('Typed during save');
+  });
+
   it('saveAs() commits the pending edit first', async () => {
     editLuminaireName('Saved as');
     await store.saveAs('/tmp/other.ldt');
@@ -310,6 +328,27 @@ describe('flush before backend model operations', () => {
     expect(store.doc?.lamps[0].lampType).toBe('IES lamp');
     expect(store.path).toBe('/tmp/other.ies');
     expect(store.dirty).toBe(false);
+  });
+
+  it('saveAs() preserves an edit made while updating the saved path', async () => {
+    const write = deferred<DocResponse>();
+    vi.mocked(api.saveAs).mockReturnValue(write.promise);
+
+    const saving = store.saveAs('/tmp/other.ies');
+    await Promise.resolve();
+    expect(api.saveAs).toHaveBeenCalledOnce();
+    editLuminaireName('Typed during Save As');
+    write.resolve(makeResponse({ path: '/tmp/other.ies' }));
+    await saving;
+
+    expect(store.doc?.luminaireName).toBe('Typed during Save As');
+    expect(store.path).toBe('/tmp/other.ies');
+    expect(store.dirty).toBe(true);
+    expect(store.tabs[0]).toMatchObject({
+      path: '/tmp/other.ies',
+      title: 'other.ies',
+      dirty: true
+    });
   });
 
   it('exportIes() includes a pending edit and keeps the document dirty', async () => {
