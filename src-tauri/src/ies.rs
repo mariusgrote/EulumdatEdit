@@ -179,10 +179,11 @@ pub fn parse(text: &str, file_name: &str) -> Result<Eulumdat, String> {
         );
     }
     if near(gamma[0], 90.0) {
-        // EULUMDAT requires gamma zero. The missing downward hemisphere has no light.
-        gamma.insert(0, 0.0);
+        // EULUMDAT requires gamma zero. A sample just below 90 prevents
+        // interpolation from inventing light throughout the downward hemisphere.
+        gamma.splice(0..0, [0.0, 89.999]);
         for row in &mut rows {
-            row.insert(0, 0.0);
+            row.splice(0..0, [0.0, 0.0]);
         }
     }
     let scale = multiplier * ballast * ballast_lamp;
@@ -505,9 +506,16 @@ mod tests {
         let input = fixture("0 90", 2, "100 50 10 200 80 20", "1000")
             .replace("0 90 180\n0 90", "90 135 180\n0 90");
         let model = parse(&input, "uplight.ies").unwrap();
-        assert_eq!(model.gamma_angles, vec![0.0, 90.0, 135.0, 180.0]);
+        assert_eq!(model.gamma_angles, vec![0.0, 89.999, 90.0, 135.0, 180.0]);
         assert_eq!(model.gamma_step, 0.0);
-        assert!(model.intensities.iter().all(|row| row[0] == 0.0));
+        assert!(model.intensities.iter().all(|row| row[..2] == [0.0, 0.0]));
+        assert_eq!(model.intensities[0][2..], [100.0, 50.0, 10.0]);
+        assert_eq!(model.intensities[1][2..], [200.0, 80.0, 20.0]);
+        assert!(
+            model.calculated_downward_flux_fraction() < 0.01,
+            "{}",
+            model.calculated_downward_flux_fraction()
+        );
         let (ldt, _) = Eulumdat::parse(&model.to_text()).unwrap();
         assert_eq!(ldt.gamma_angles, model.gamma_angles);
         assert_eq!(ldt.intensities, model.intensities);
