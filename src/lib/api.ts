@@ -7,8 +7,8 @@ export function newFromTemplate(): Promise<WindowStateResponse> {
   return invoke('new_from_template');
 }
 
-export function openFile(path: string): Promise<WindowStateResponse> {
-  return invoke('open_file', { path });
+export function openFile(path: string, focusExisting = true): Promise<WindowStateResponse> {
+  return invoke('open_file', { path, focusExisting });
 }
 
 export function reloadDocument(): Promise<DocResponse> {
@@ -62,8 +62,8 @@ export function quitApp(): Promise<void> {
   return invoke('quit_app');
 }
 
-/** Drains any file the OS queued for opening before the UI was ready. */
-export function takePendingOpen(): Promise<string | null> {
+/** Drains files the OS queued for opening before the UI was ready. */
+export function takePendingOpen(): Promise<string[]> {
   return invoke('take_pending_open');
 }
 

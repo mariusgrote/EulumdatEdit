@@ -23,11 +23,8 @@ pub fn run() {
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
         open_request::focus_window(app);
-        if let Some(path) =
-            open_request::photometric_path_from_args(&args, std::path::Path::new(&cwd))
-        {
-            open_request::deliver(app, &path);
-        }
+        let paths = open_request::photometric_paths_from_args(&args, std::path::Path::new(&cwd));
+        open_request::deliver(app, &paths);
     }));
 
     builder
@@ -88,11 +85,11 @@ pub fn run() {
 
             // Windows/Linux pass the file that launched the app as an argument.
             #[cfg(any(target_os = "windows", target_os = "linux"))]
-            if let Some(path) = std::env::current_dir()
+            if let Some(paths) = std::env::current_dir()
                 .ok()
-                .and_then(|cwd| open_request::photometric_path_from_args(std::env::args_os(), &cwd))
+                .map(|cwd| open_request::photometric_paths_from_args(std::env::args_os(), &cwd))
             {
-                open_request::deliver(_app.handle(), &path);
+                open_request::deliver(_app.handle(), &paths);
             }
             Ok(())
         })
@@ -111,13 +108,12 @@ pub fn run() {
             // macOS/iOS/Android deliver file-association / "Open with" requests here.
             #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
             if let tauri::RunEvent::Opened { urls } = _event {
-                if let Some(path) = urls
+                let paths: Vec<_> = urls
                     .iter()
                     .filter_map(|u| u.to_file_path().ok())
-                    .find(|p| open_request::is_photometric(p))
-                {
-                    open_request::deliver(_app, &path);
-                }
+                    .filter(|p| open_request::is_photometric(p))
+                    .collect();
+                open_request::deliver(_app, &paths);
             }
         });
 }

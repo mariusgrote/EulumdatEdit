@@ -313,9 +313,8 @@ pub struct AppState {
     pub next_doc_id: AtomicU32,
     /// Source of unique labels for windows opened after `main`.
     pub next_window_id: AtomicU32,
-    /// A file the OS asked us to open (file association / `open with`) before
-    /// the frontend was ready to receive it. Drained by `take_pending_open`.
-    pub pending_open: Mutex<Option<String>>,
+    /// Files the OS asked us to open before the frontend was ready.
+    pub pending_open: Mutex<Vec<String>>,
     /// Set once the frontend has drained `pending_open`. After this, OS open
     /// requests are delivered live via the `open-file` event instead.
     pub frontend_ready: AtomicBool,

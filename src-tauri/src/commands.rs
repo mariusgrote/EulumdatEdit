@@ -230,6 +230,7 @@ pub fn new_from_template(
 #[tauri::command]
 pub fn open_file(
     path: String,
+    focus_existing: bool,
     window: WebviewWindow,
     app: AppHandle,
     state: State<'_, AppState>,
@@ -244,8 +245,10 @@ pub fn open_file(
     if let Some((label, response)) = existing {
         let response = response?;
         if let Some(existing_window) = app.get_webview_window(&label) {
-            let _ = existing_window.unminimize();
-            let _ = existing_window.set_focus();
+            if focus_existing {
+                let _ = existing_window.unminimize();
+                let _ = existing_window.set_focus();
+            }
             let _ = existing_window.emit("workspace-changed", ());
         }
         return Ok(response);
@@ -483,12 +486,12 @@ pub fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
-/// Returns and clears any file the OS queued for opening before the UI was
+/// Returns and clears files the OS queued for opening before the UI was
 /// ready (e.g. launching the app by double-clicking a `.ldt` file).
 #[tauri::command]
-pub fn take_pending_open(state: State<'_, AppState>) -> Option<String> {
+pub fn take_pending_open(state: State<'_, AppState>) -> Vec<String> {
     state.frontend_ready.store(true, Ordering::SeqCst);
-    state.pending_open.lock().unwrap().take()
+    std::mem::take(&mut *state.pending_open.lock().unwrap())
 }
 
 /// Replaces the in-memory model with an edited DTO from the UI.

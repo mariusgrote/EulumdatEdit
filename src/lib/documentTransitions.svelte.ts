@@ -30,6 +30,7 @@ export class DocumentTransitions {
   #commitInFlight: Promise<boolean> | null = null;
   /** Serializes saves with operations that change the active backend document. */
   #saveInFlight: Promise<void> | null = null;
+  #openInFlight: Promise<void> | null = null;
   #writeInFlight: Promise<DocResponse | null> | null = null;
   #editRevision = 0;
   /** A failed update must be retried before any operation uses the backend model. */
@@ -96,10 +97,63 @@ export class DocumentTransitions {
   }
 
   async open(path: string) {
-    await this.#saveInFlight;
-    if (!(await this.flushEdits())) return;
-    const res = await this.#run(() => api.openFile(path));
-    if (res) this.#applyWindow(res);
+    await this.openMany([path]);
+  }
+
+  async openMany(paths: string[]) {
+    if (paths.length === 0) return;
+    const previous = this.#openInFlight;
+    const pending = (async () => {
+      if (previous) await previous;
+      await this.#saveInFlight;
+      if (!(await this.flushEdits())) return;
+      const failures: string[] = [];
+      this.busy = true;
+      try {
+        for (const [index, path] of paths.entries()) {
+          try {
+            const tabId = this.activeTabId;
+            const revision = this.#editRevision;
+            // Only the last selected file may bring an already-open window forward.
+            const response = await (index === paths.length - 1
+              ? api.openFile(path)
+              : api.openFile(path, false));
+            if (this.#editRevision === revision && !this.#pendingEdit) {
+              this.#applyWindow(response);
+              continue;
+            }
+            if (!(await this.flushEdits())) {
+              if (tabId) await api.activateTab(tabId);
+              break;
+            }
+            // A draft may have changed the tab summary in the open response.
+            // Keep draining until the backend snapshot matches the latest edit.
+            let current: WindowStateResponse;
+            do {
+              const currentRevision = this.#editRevision;
+              current = await api.currentDocument();
+              if (this.#editRevision === currentRevision && !this.#pendingEdit) break;
+              if (!(await this.flushEdits())) {
+                if (tabId) await api.activateTab(tabId);
+                return;
+              }
+            } while (true);
+            this.#applyWindow(current);
+          } catch (e) {
+            failures.push(paths.length === 1 ? String(e) : `${path}: ${String(e)}`);
+          }
+        }
+      } finally {
+        this.busy = false;
+      }
+      if (failures.length > 0) this.error = failures.join('\n');
+    })();
+    this.#openInFlight = pending;
+    try {
+      await pending;
+    } finally {
+      if (this.#openInFlight === pending) this.#openInFlight = null;
+    }
   }
 
   /** Shows the document the backend prepared for this window, if any. */
