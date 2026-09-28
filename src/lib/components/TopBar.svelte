@@ -12,12 +12,8 @@
     exportIes
   } from '$lib/documentActions';
   import { ask } from '@tauri-apps/plugin-dialog';
-  import { TabPointerDragSession, type TabPointerDrag } from '$lib/tabPointerDrag';
-  import { TabDragPreview } from '$lib/tabDragPreview';
-  import {
-    getAllWebviewWindows,
-    getCurrentWebviewWindow
-  } from '@tauri-apps/api/webviewWindow';
+  import { TabDragFlow, type DragState, type TabLayout } from '$lib/tabDragFlow';
+  import { tabDragWindows } from '$lib/tabDragWindows';
 
   interface Props {
     showValidation: boolean;
@@ -85,20 +81,26 @@
   const motionDuration = () =>
     window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 170;
 
-  let tabDrag = $state<TabPointerDrag | null>(null);
-  const dragSession = new TabPointerDragSession();
-  let dropIndex = $state<number | null>(null);
+  let tabDrag = $state<DragState | null>(null);
   let suppressClick = false;
   let capturedTab: HTMLElement | null = null;
-  let nativePreview: TabDragPreview | null = null;
+  const dragFlow = new TabDragFlow({
+    title: (id) => store.tabs.find((tab) => tab.id === id)?.title ?? '',
+    move: (id, target, index) => store.moveTab(id, target, index),
+    detach: (id, x, y) => store.detachTab(id, x, y),
+    hasTabs: () => store.tabs.length > 0,
+    reportError: (message) => { store.error = message; }
+  }, tabDragWindows);
 
-  function tabInsertionIndex(clientX: number): number {
-    const tabs = [...document.querySelectorAll<HTMLElement>('[data-tab-id]')];
-    const index = tabs.findIndex((tab) => {
-      const rect = tab.getBoundingClientRect();
-      return clientX < rect.left + rect.width / 2;
-    });
-    return index === -1 ? tabs.length : index;
+  function tabLayout(): TabLayout {
+    const strip = tabsElement.getBoundingClientRect();
+    return {
+      strip: { left: strip.left, top: strip.top, right: strip.right, bottom: strip.bottom },
+      tabs: [...tabsElement.querySelectorAll<HTMLElement>('[data-tab-id]')].map((tab) => {
+        const rect = tab.getBoundingClientRect();
+        return { left: rect.left, right: rect.right };
+      })
+    };
   }
 
   function onTabPointerDown(event: PointerEvent, tabId: string) {
@@ -107,37 +109,23 @@
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     capturedTab = target;
-    dragSession.start(tabId, event);
-    tabDrag = dragSession.current;
+    dragFlow.start(tabId, event);
+    tabDrag = dragFlow.state;
   }
 
   function cancelTabDrag() {
-    nativePreview?.end();
-    nativePreview = null;
-    if (!tabDrag) return;
-    const pointerId = tabDrag.pointerId;
-    dragSession.cancel();
+    const pointerId = tabDrag?.pointerId;
+    dragFlow.cancel();
     tabDrag = null;
-    dropIndex = null;
-    if (capturedTab?.hasPointerCapture(pointerId)) capturedTab.releasePointerCapture(pointerId);
+    if (pointerId !== undefined && capturedTab?.hasPointerCapture(pointerId)) {
+      capturedTab.releasePointerCapture(pointerId);
+    }
     capturedTab = null;
   }
 
   function onTabPointerMove(event: PointerEvent) {
     if (!tabDrag || event.pointerId !== tabDrag.pointerId) return;
-    tabDrag = dragSession.move(event);
-    if (!tabDrag?.dragging) return;
-    if (!nativePreview) {
-      const title = store.tabs.find((tab) => tab.id === tabDrag?.tabId)?.title ?? '';
-      nativePreview = new TabDragPreview(title, (message) => { store.error = message; });
-    } else {
-      nativePreview.move();
-    }
-    const strip = tabsElement.getBoundingClientRect();
-    dropIndex = event.clientY >= strip.top && event.clientY <= strip.bottom &&
-      event.clientX >= strip.left && event.clientX <= strip.right
-      ? tabInsertionIndex(event.clientX)
-      : null;
+    tabDrag = dragFlow.move(event, tabLayout());
   }
 
   function onTabPointerCancel(event: PointerEvent) {
@@ -146,60 +134,14 @@
 
   async function onTabPointerUp(event: PointerEvent) {
     if (!tabDrag || event.pointerId !== tabDrag.pointerId) return;
-    const drag = dragSession.finish(event);
-    const insertionIndex = dropIndex;
+    const layout = tabLayout();
+    tabDrag = dragFlow.move(event, layout);
+    const wasDragging = tabDrag?.dragging ?? false;
+    const finished = dragFlow.finish(event, layout);
+    suppressClick = wasDragging;
+    if (wasDragging) setTimeout(() => { suppressClick = false; }, 0);
     cancelTabDrag();
-    if (!drag) return;
-    suppressClick = true;
-    setTimeout(() => { suppressClick = false; }, 0);
-    const end = { x: drag.screenX, y: drag.screenY };
-
-    const current = getCurrentWebviewWindow();
-    const currentPosition = await current.outerPosition();
-    const currentSize = await current.outerSize();
-    const currentScale = await current.scaleFactor();
-    const currentBounds = {
-      left: currentPosition.x / currentScale,
-      top: currentPosition.y / currentScale,
-      right: (currentPosition.x + currentSize.width) / currentScale,
-      bottom: (currentPosition.y + currentSize.height) / currentScale
-    };
-    const insideCurrent =
-      end.x >= currentBounds.left &&
-      end.x <= currentBounds.right &&
-      end.y >= currentBounds.top &&
-      end.y <= currentBounds.bottom;
-
-    if (insideCurrent) {
-      await store.moveTab(
-        drag.tabId,
-        current.label,
-        insertionIndex ?? tabInsertionIndex(end.x - currentBounds.left)
-      );
-      return;
-    }
-
-    for (const candidate of await getAllWebviewWindows()) {
-      if (candidate.label === current.label || candidate.label.startsWith('tab-preview-')) continue;
-      const position = await candidate.outerPosition();
-      const size = await candidate.outerSize();
-      const scale = await candidate.scaleFactor();
-      const left = position.x / scale;
-      const top = position.y / scale;
-      if (
-        end.x >= left &&
-        end.x <= left + size.width / scale &&
-        end.y >= top &&
-        end.y <= top + size.height / scale
-      ) {
-        await store.moveTab(drag.tabId, candidate.label);
-        if (store.tabs.length === 0) await current.close();
-        return;
-      }
-    }
-
-    await store.detachTab(drag.tabId, end.x - 180, end.y - 18);
-    if (store.tabs.length === 0) await current.close();
+    await finished;
   }
 
   onMount(() => () => cancelTabDrag());
@@ -221,7 +163,7 @@
         class="tab"
         class:active={tab.id === store.activeTabId}
         class:dragging={tabDrag?.dragging && tabDrag.tabId === tab.id}
-        class:drop-before={tabDrag?.dragging && dropIndex === index && tabDrag.tabId !== tab.id}
+        class:drop-before={tabDrag?.dragging && tabDrag.dropIndex === index && tabDrag.tabId !== tab.id}
         data-tab-id={tab.id}
         title={tab.path || tab.title}
         role="tab"
@@ -258,7 +200,7 @@
     {/each}
     <div
       class="title-drag-space"
-      class:drop-end={tabDrag?.dragging && dropIndex === store.tabs.length}
+      class:drop-end={tabDrag?.dragging && tabDrag.dropIndex === store.tabs.length}
       data-tauri-drag-region
     ></div>
   </div>

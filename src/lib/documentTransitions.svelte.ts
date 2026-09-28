@@ -136,16 +136,18 @@ export class DocumentTransitions {
 
   async moveTab(tabId: string, targetWindow: string, targetIndex?: number) {
     await this.#saveInFlight;
-    if (!(await this.flushEdits())) return;
+    if (!(await this.flushEdits())) return false;
     const res = await this.#run(() => api.moveTab(tabId, targetWindow, targetIndex));
     if (res) this.#applyWindow(res);
+    return res !== null;
   }
 
   async detachTab(tabId: string, x: number, y: number) {
     await this.#saveInFlight;
-    if (!(await this.flushEdits())) return;
+    if (!(await this.flushEdits())) return false;
     const res = await this.#run(() => api.detachTab(tabId, x, y));
     if (res) this.#applyWindow(res);
+    return res !== null;
   }
 
   /** Discards in-memory edits by reloading the document from its file on disk.
