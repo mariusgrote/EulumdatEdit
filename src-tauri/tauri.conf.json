@@ -34,6 +34,13 @@
         "description": "EULUMDAT photometric data file",
         "role": "Editor",
         "mimeType": "text/plain"
+      },
+      {
+        "ext": ["ies"],
+        "name": "IES photometry",
+        "description": "IES LM-63 photometric data file",
+        "role": "Editor",
+        "mimeType": "text/plain"
       }
     ],
     "icon": [

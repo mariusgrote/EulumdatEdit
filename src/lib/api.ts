@@ -79,6 +79,10 @@ export function saveAs(path: string): Promise<DocResponse> {
   return invoke('save_as', { path });
 }
 
+export function exportIes(path: string): Promise<void> {
+  return invoke('export_ies', { path });
+}
+
 export function resampleGamma(step: number): Promise<DocResponse> {
   return invoke('resample_gamma', { step });
 }

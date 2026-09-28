@@ -141,16 +141,16 @@
     updateNarrow();
     window.addEventListener('resize', updateNarrow);
 
-    // Accept .ldt files dropped onto the window.
+    // Accept photometric files dropped onto the window.
     const unlistenDrop = appWindow.onDragDropEvent((event) => {
       const p = event.payload;
       if (p.type === 'enter') {
-        dragOver = p.paths.some(isLdt);
+        dragOver = p.paths.some(isPhotometric);
       } else if (p.type === 'leave') {
         dragOver = false;
       } else if (p.type === 'drop') {
         dragOver = false;
-        const file = p.paths.find(isLdt);
+        const file = p.paths.find(isPhotometric);
         if (file) openPath(file);
       }
     });
@@ -177,7 +177,7 @@
     };
   });
 
-  const isLdt = (p: string) => p.toLowerCase().endsWith('.ldt');
+  const isPhotometric = (p: string) => /\.(ldt|ies)$/i.test(p);
 
   async function onCloseShortcut() {
     await closeDocument();
@@ -253,12 +253,12 @@
         <div class="welcome">
           <div class="logo">◐</div>
           <h1>EulumdatEdit</h1>
-          <p>Open a EULUMDAT <code>.ldt</code> file or start a new luminaire.</p>
+          <p>Open an EULUMDAT <code>.ldt</code> or IES <code>.ies</code> file, or start a new luminaire.</p>
           <div class="welcome-actions">
-            <button class="btn primary" onclick={openFileDialog}>Open .ldt file…</button>
+            <button class="btn primary" onclick={openFileDialog}>Open photometric file…</button>
             <button class="btn" onclick={newDocument}>New luminaire</button>
           </div>
-          <p class="welcome-hint">or drag and drop a <code>.ldt</code> file anywhere</p>
+          <p class="welcome-hint">or drag and drop a <code>.ldt</code> or <code>.ies</code> file anywhere</p>
           {#if store.error}<p class="err">{store.error}</p>{/if}
         </div>
       {:else}
@@ -291,7 +291,7 @@
     <div class="dropzone">
       <div class="dropzone-card">
         <div class="logo">◐</div>
-        <p>Drop to open <code>.ldt</code> file</p>
+        <p>Drop to open <code>.ldt</code> or <code>.ies</code> file</p>
       </div>
     </div>
   {/if}

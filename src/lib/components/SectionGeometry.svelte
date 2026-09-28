@@ -3,15 +3,16 @@
   import NumberField from './NumberField.svelte';
 
   const doc = $derived(store.doc!);
+  const openedFromIes = $derived(store.path?.toLowerCase().endsWith('.ies') ?? false);
   const edit = () => store.edited();
 </script>
 
 <div class="card">
   <h3>Luminaire dimensions</h3>
   <div class="grid-3">
-    <NumberField fieldKey="luminaireLength" label="Length / diameter" unit="mm" bind:value={doc.luminaireLength} onedit={edit} />
-    <NumberField fieldKey="luminaireWidth" label="Width" unit="mm" bind:value={doc.luminaireWidth} onedit={edit} />
-    <NumberField fieldKey="luminaireHeight" label="Height" unit="mm" bind:value={doc.luminaireHeight} onedit={edit} />
+    <NumberField fieldKey="luminaireLength" label="Length / diameter" unit="mm" sourceNote={openedFromIes ? 'Not in IES' : undefined} bind:value={doc.luminaireLength} onedit={edit} />
+    <NumberField fieldKey="luminaireWidth" label="Width" unit="mm" sourceNote={openedFromIes ? 'Not in IES' : undefined} bind:value={doc.luminaireWidth} onedit={edit} />
+    <NumberField fieldKey="luminaireHeight" label="Height" unit="mm" sourceNote={openedFromIes ? 'Not in IES' : undefined} bind:value={doc.luminaireHeight} onedit={edit} />
   </div>
 </div>
 

@@ -10,6 +10,7 @@ vi.mock('./api', () => ({
   otherDocumentsDirty: vi.fn(),
   save: vi.fn(),
   saveAs: vi.fn(),
+  exportIes: vi.fn(),
   quitApp: vi.fn()
 }));
 
@@ -26,7 +27,7 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
 const api = await import('./api');
 const dialog = await import('@tauri-apps/plugin-dialog');
 const { store } = await import('./store.svelte');
-const { closeDocument, newDocument, openPath, quitApplication, saveDocument } = await import(
+const { closeDocument, newDocument, openPath, quitApplication, saveDocument, exportIes } = await import(
   './documentActions'
 );
 
@@ -70,6 +71,7 @@ async function seedDoc(path: string | null) {
 beforeEach(() => {
   vi.mocked(api.save).mockResolvedValue(makeResponse({ path: '/tmp/test.ldt', dirty: false }));
   vi.mocked(api.saveAs).mockResolvedValue(makeResponse({ path: '/tmp/new.ldt', dirty: false }));
+  vi.mocked(api.exportIes).mockResolvedValue(undefined);
   vi.mocked(api.closeDocument).mockResolvedValue(emptyWindow());
   vi.mocked(api.otherDocumentsDirty).mockResolvedValue(false);
 });
@@ -118,6 +120,17 @@ describe('saveDocument', () => {
     expect(api.save).not.toHaveBeenCalled();
     expect(api.saveAs).not.toHaveBeenCalled();
   });
+});
+
+it('exports IES as a separate file', async () => {
+  await seedDoc('/tmp/test.ldt');
+  vi.mocked(dialog.save).mockResolvedValue('/tmp/test.ies');
+
+  await exportIes();
+
+  expect(dialog.save).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: 'test.ies' }));
+  expect(api.exportIes).toHaveBeenCalledWith('/tmp/test.ies');
+  expect(store.path).toBe('/tmp/test.ldt');
 });
 
 describe('opening documents', () => {

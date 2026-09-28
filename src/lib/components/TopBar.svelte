@@ -8,7 +8,8 @@
     openFileDialog,
     closeDocument,
     saveDocument,
-    saveDocumentAs
+    saveDocumentAs,
+    exportIes
   } from '$lib/documentActions';
   import { ask } from '@tauri-apps/plugin-dialog';
   import { TabPointerDragSession, type TabPointerDrag } from '$lib/tabPointerDrag';
@@ -319,6 +320,7 @@
       </button>
     {/if}
     <button class="btn" onclick={saveDocument} disabled={!store.doc}>Save</button>
+    <button class="btn ghost" onclick={exportIes} disabled={!store.doc}>Export IES</button>
 
     <button
       class="btn ghost badge-btn"

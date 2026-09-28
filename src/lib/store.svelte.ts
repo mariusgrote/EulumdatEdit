@@ -39,6 +39,8 @@ class DocStore {
 
   #commitTimer: ReturnType<typeof setTimeout> | null = null;
   #commitInFlight: Promise<boolean> | null = null;
+  /** Serializes saves with operations that change the active backend document. */
+  #saveInFlight: Promise<void> | null = null;
   #editRevision = 0;
   #highlightTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -112,12 +114,14 @@ class DocStore {
   }
 
   async newDoc() {
+    await this.#saveInFlight;
     if (!(await this.flushEdits())) return;
     const res = await this.#run(() => api.newFromTemplate());
     if (res) this.#applyWindow(res);
   }
 
   async open(path: string) {
+    await this.#saveInFlight;
     if (!(await this.flushEdits())) return;
     const res = await this.#run(() => api.openFile(path));
     if (res) this.#applyWindow(res);
@@ -125,6 +129,7 @@ class DocStore {
 
   /** Shows the document the backend prepared for this window, if any. */
   async loadCurrent() {
+    await this.#saveInFlight;
     if (!(await this.flushEdits())) return;
     const res = await this.#run(() => api.currentDocument());
     if (res) this.#applyWindow(res);
@@ -132,6 +137,7 @@ class DocStore {
 
   async activateTab(tabId: string) {
     if (tabId === this.activeTabId) return;
+    await this.#saveInFlight;
     if (!(await this.flushEdits())) return;
     const res = await this.#run(() => api.activateTab(tabId));
     if (res) this.#applyWindow(res);
@@ -140,6 +146,7 @@ class DocStore {
   /** Closes one tab and selects the backend-chosen neighbour. */
   async close(tabId = this.activeTabId) {
     if (!tabId) return;
+    await this.#saveInFlight;
     if (tabId === this.activeTabId) {
       this.#cancelPendingCommit();
       await this.#commitInFlight;
@@ -153,12 +160,14 @@ class DocStore {
   }
 
   async moveTab(tabId: string, targetWindow: string, targetIndex?: number) {
+    await this.#saveInFlight;
     if (!(await this.flushEdits())) return;
     const res = await this.#run(() => api.moveTab(tabId, targetWindow, targetIndex));
     if (res) this.#applyWindow(res);
   }
 
   async detachTab(tabId: string, x: number, y: number) {
+    await this.#saveInFlight;
     if (!(await this.flushEdits())) return;
     const res = await this.#run(() => api.detachTab(tabId, x, y));
     if (res) this.#applyWindow(res);
@@ -168,6 +177,7 @@ class DocStore {
    *  No-op for an unsaved (pathless) document. */
   async revert() {
     if (!this.path) return;
+    await this.#saveInFlight;
     this.#cancelPendingCommit();
     await this.#commitInFlight;
     const res = await this.#run(() => api.reloadDocument());
@@ -175,24 +185,63 @@ class DocStore {
   }
 
   async save() {
-    if (!(await this.flushEdits())) return;
-    const res = await this.#run(() => api.save());
-    if (res) this.#apply(res, false);
+    await this.#saveDocument(() => api.save());
   }
 
   async saveAs(path: string) {
+    await this.#saveDocument(() => api.saveAs(path));
+  }
+
+  async #saveDocument(write: () => Promise<DocResponse>) {
+    const previous = this.#saveInFlight;
+    const pending = (async () => {
+      if (previous) await previous;
+      if (!(await this.flushEdits())) return;
+      const revision = this.#editRevision;
+      const tabId = this.activeTabId;
+      const res = await this.#run(write);
+      if (res && this.activeTabId === tabId) this.#applySave(res, revision);
+    })();
+    this.#saveInFlight = pending;
+    try {
+      await pending;
+    } finally {
+      if (this.#saveInFlight === pending) this.#saveInFlight = null;
+    }
+  }
+
+  /** A save response describes the document at the time the save started.
+   *  Keep edits made during the write, while still showing a Save As path. */
+  #applySave(res: DocResponse, revision: number) {
+    if (this.#editRevision === revision) {
+      this.#apply(res, true);
+      return;
+    }
+    this.path = res.path;
+    this.dirty = true;
+    const active = this.tabs.find((tab) => tab.id === this.activeTabId);
+    if (active) {
+      active.path = res.path;
+      active.title = res.path?.split(/[\\\\/]/).pop() || 'Untitled';
+      active.dirty = true;
+    }
+  }
+
+  async exportIes(path: string) {
+    await this.#saveInFlight;
     if (!(await this.flushEdits())) return;
-    const res = await this.#run(() => api.saveAs(path));
-    if (res) this.#apply(res, false);
+    await this.#run(() => api.exportIes(path));
   }
 
   async resampleGamma(step: number) {
+    await this.#saveInFlight;
     if (!(await this.flushEdits())) return;
     const res = await this.#run(() => api.resampleGamma(step));
     if (res) this.#apply(res, true);
   }
 
   async scaleTo100() {
+    await this.#saveInFlight;
     if (!(await this.flushEdits())) return;
     const res = await this.#run(() => api.scaleTo100Percent());
     if (res) this.#apply(res, true);
@@ -200,6 +249,7 @@ class DocStore {
 
   /** Toggles legacy strict validation and re-validates the open document. */
   async setStrictValidation(enabled: boolean) {
+    await this.#saveInFlight;
     if (!this.doc) {
       this.strictValidation = enabled;
       return;

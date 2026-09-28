@@ -4,6 +4,7 @@
   import TextField from './TextField.svelte';
 
   const doc = $derived(store.doc!);
+  const openedFromIes = $derived(store.path?.toLowerCase().endsWith('.ies') ?? false);
   const edit = () => store.edited();
   const typeIndicatorLabel = $derived(
     TYPE_INDICATOR_LABELS[doc.typeIndicator] ?? `Unknown (${doc.typeIndicator})`
@@ -17,18 +18,19 @@
     <TextField fieldKey="identification" label="Identification" bind:value={doc.identification} onedit={edit} />
     <div class="grid-2">
       <TextField fieldKey="luminaireName" label="Luminaire name" bind:value={doc.luminaireName} onedit={edit} />
-      <TextField fieldKey="luminaireNumber" label="Luminaire number" bind:value={doc.luminaireNumber} onedit={edit} />
+      <TextField fieldKey="luminaireNumber" label="Luminaire number" sourceNote={openedFromIes ? 'Not imported from IES' : undefined} bind:value={doc.luminaireNumber} onedit={edit} />
     </div>
     <div class="grid-2">
       <TextField
         fieldKey="measurementReportNumber"
         label="Measurement report number"
+        sourceNote={openedFromIes ? 'Not imported from IES' : undefined}
         bind:value={doc.measurementReportNumber}
         onedit={edit}
       />
       <TextField fieldKey="fileName" label="File name" bind:value={doc.fileName} onedit={edit} />
     </div>
-    <TextField fieldKey="dateUser" label="Date / user" bind:value={doc.dateUser} onedit={edit} />
+    <TextField fieldKey="dateUser" label="Date / user" sourceNote={openedFromIes ? 'Not imported from IES' : undefined} bind:value={doc.dateUser} onedit={edit} />
   </div>
 </div>
 

@@ -13,6 +13,7 @@ vi.mock('./api', () => ({
   updateDocument: vi.fn(),
   save: vi.fn(),
   saveAs: vi.fn(),
+  exportIes: vi.fn(),
   resampleGamma: vi.fn(),
   scaleTo100Percent: vi.fn(),
   setStrictValidation: vi.fn()
@@ -143,6 +144,7 @@ beforeEach(async () => {
   );
   vi.mocked(api.save).mockResolvedValue(makeResponse());
   vi.mocked(api.saveAs).mockResolvedValue(makeResponse({ path: '/tmp/other.ldt' }));
+  vi.mocked(api.exportIes).mockResolvedValue(undefined);
   vi.mocked(api.resampleGamma).mockResolvedValue(makeResponse({ dirty: true }));
   vi.mocked(api.scaleTo100Percent).mockResolvedValue(makeResponse({ dirty: true }));
   vi.mocked(api.setStrictValidation).mockResolvedValue(makeResponse({ strictValidation: true }));
@@ -185,7 +187,7 @@ describe('debounced commit', () => {
     vi.advanceTimersByTime(250);
 
     const saving = store.save();
-    await Promise.resolve();
+    for (let i = 0; i < 5; i++) await Promise.resolve();
     expect(api.save).not.toHaveBeenCalled();
 
     update.resolve(makeResponse({ dirty: true }));
@@ -275,6 +277,37 @@ describe('flush before backend model operations', () => {
     expect(api.updateDocument).toHaveBeenCalledTimes(1);
   });
 
+  it('save() displays the model written by the backend', async () => {
+    const saved = makeDoc();
+    saved.lamps[0].totalLuminousFlux = 1000;
+    saved.luminaireName = 'Canonical IES name';
+    vi.mocked(api.save).mockResolvedValue(makeResponse({ doc: saved, path: '/tmp/test.ies' }));
+
+    await store.save();
+
+    expect(store.doc?.luminaireName).toBe('Canonical IES name');
+    expect(store.path).toBe('/tmp/test.ies');
+    expect(store.dirty).toBe(false);
+  });
+
+  it('save() preserves an edit made while the write is pending', async () => {
+    const write = deferred<DocResponse>();
+    vi.mocked(api.save).mockReturnValue(write.promise);
+
+    const saving = store.save();
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(api.save).toHaveBeenCalledOnce();
+    editLuminaireName('Typed during save');
+    write.resolve(makeResponse());
+    await saving;
+
+    expect(store.doc?.luminaireName).toBe('Typed during save');
+    expect(store.dirty).toBe(true);
+    expect(store.tabs[0].dirty).toBe(true);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(vi.mocked(api.updateDocument).mock.calls[0][0].luminaireName).toBe('Typed during save');
+  });
+
   it('saveAs() commits the pending edit first', async () => {
     editLuminaireName('Saved as');
     await store.saveAs('/tmp/other.ldt');
@@ -282,6 +315,100 @@ describe('flush before backend model operations', () => {
     expect(order(vi.mocked(api.updateDocument))).toBeLessThan(order(vi.mocked(api.saveAs)));
     await vi.advanceTimersByTimeAsync(1000);
     expect(api.updateDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('saveAs() displays the converted model at its new path', async () => {
+    const saved = makeDoc();
+    saved.lamps[0].lampCount = 1;
+    saved.lamps[0].lampType = 'IES lamp';
+    vi.mocked(api.saveAs).mockResolvedValue(makeResponse({ doc: saved, path: '/tmp/other.ies' }));
+
+    await store.saveAs('/tmp/other.ies');
+
+    expect(store.doc?.lamps[0].lampType).toBe('IES lamp');
+    expect(store.path).toBe('/tmp/other.ies');
+    expect(store.dirty).toBe(false);
+  });
+
+  it('saveAs() preserves an edit made while updating the saved path', async () => {
+    const write = deferred<DocResponse>();
+    vi.mocked(api.saveAs).mockReturnValue(write.promise);
+
+    const saving = store.saveAs('/tmp/other.ies');
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(api.saveAs).toHaveBeenCalledOnce();
+    editLuminaireName('Typed during Save As');
+    write.resolve(makeResponse({ path: '/tmp/other.ies' }));
+    await saving;
+
+    expect(store.doc?.luminaireName).toBe('Typed during Save As');
+    expect(store.path).toBe('/tmp/other.ies');
+    expect(store.dirty).toBe(true);
+    expect(store.tabs[0]).toMatchObject({
+      path: '/tmp/other.ies',
+      title: 'other.ies',
+      dirty: true
+    });
+  });
+
+  it('waits for a pending save before switching tabs', async () => {
+    const write = deferred<DocResponse>();
+    vi.mocked(api.save).mockReturnValue(write.promise);
+    store.tabs.push({ id: 'tab-2', title: 'second.ldt', path: '/tmp/second.ldt', dirty: false });
+    vi.mocked(api.activateTab).mockResolvedValue({
+      document: makeResponse({
+        doc: { ...makeDoc(), luminaireName: 'Second tab' },
+        path: '/tmp/second.ldt'
+      }),
+      tabs: [
+        { id: 'tab-1', title: 'test.ldt', path: '/tmp/test.ldt', dirty: false },
+        { id: 'tab-2', title: 'second.ldt', path: '/tmp/second.ldt', dirty: false }
+      ],
+      activeTabId: 'tab-2'
+    });
+
+    const saving = store.save();
+    const switching = store.activateTab('tab-2');
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(api.save).toHaveBeenCalledOnce();
+    expect(api.activateTab).not.toHaveBeenCalled();
+
+    write.resolve(makeResponse());
+    await saving;
+    await switching;
+
+    expect(order(vi.mocked(api.save))).toBeLessThan(order(vi.mocked(api.activateTab)));
+    expect(store.activeTabId).toBe('tab-2');
+    expect(store.doc?.luminaireName).toBe('Second tab');
+    expect(store.path).toBe('/tmp/second.ldt');
+  });
+
+  it('waits for a pending Save As before closing its tab', async () => {
+    const write = deferred<DocResponse>();
+    vi.mocked(api.saveAs).mockReturnValue(write.promise);
+
+    const saving = store.saveAs('/tmp/other.ies');
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(api.saveAs).toHaveBeenCalledOnce();
+    const closing = store.close();
+    expect(api.closeDocument).not.toHaveBeenCalled();
+
+    write.resolve(makeResponse({ path: '/tmp/other.ies' }));
+    await saving;
+    await closing;
+
+    expect(order(vi.mocked(api.saveAs))).toBeLessThan(order(vi.mocked(api.closeDocument)));
+    expect(store.doc).toBeNull();
+  });
+
+  it('exportIes() includes a pending edit and keeps the document dirty', async () => {
+    editLuminaireName('Exported name');
+    await store.exportIes('/tmp/copy.ies');
+
+    expect(vi.mocked(api.updateDocument).mock.calls[0][0].luminaireName).toBe('Exported name');
+    expect(order(vi.mocked(api.updateDocument))).toBeLessThan(order(vi.mocked(api.exportIes)));
+    expect(store.path).toBe('/tmp/test.ldt');
+    expect(store.dirty).toBe(true);
   });
 
   it('resampleGamma() and scaleTo100() commit the pending edit first', async () => {
