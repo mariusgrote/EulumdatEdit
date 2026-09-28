@@ -62,11 +62,7 @@ fn respond(
 }
 
 fn active_doc_id(workspace: &Workspace, window_label: &str) -> Result<String, String> {
-    workspace
-        .windows
-        .get(window_label)
-        .and_then(|window| window.active.clone())
-        .ok_or_else(|| "No document open".to_string())
+    workspace.active_id(window_label).map(str::to_string)
 }
 
 /// Runs `f` on the active document shown in `window`.
@@ -76,11 +72,7 @@ fn with_doc<T>(
     f: impl FnOnce(&mut OpenDoc) -> Result<T, String>,
 ) -> Result<T, String> {
     let mut workspace = state.workspace.lock().unwrap();
-    let id = active_doc_id(&workspace, window.label())?;
-    let doc = workspace
-        .docs
-        .get_mut(&id)
-        .ok_or_else(|| "Active document is missing".to_string())?;
+    let doc = workspace.active_doc_mut(window.label())?;
     f(doc)
 }
 
@@ -94,7 +86,7 @@ fn tab_title(doc: &OpenDoc) -> String {
 }
 
 fn window_state(workspace: &Workspace, window_label: &str) -> Result<WindowStateResponse, String> {
-    let Some(window) = workspace.windows.get(window_label) else {
+    let Some(window) = workspace.window(window_label) else {
         return Ok(WindowStateResponse {
             document: None,
             tabs: Vec::new(),
@@ -105,7 +97,7 @@ fn window_state(workspace: &Workspace, window_label: &str) -> Result<WindowState
         .tabs
         .iter()
         .filter_map(|id| {
-            workspace.docs.get(id).map(|doc| TabSummary {
+            workspace.doc(id).map(|doc| TabSummary {
                 id: id.clone(),
                 title: tab_title(doc),
                 path: doc.path.clone(),
@@ -116,7 +108,7 @@ fn window_state(workspace: &Workspace, window_label: &str) -> Result<WindowState
     let document = window
         .active
         .as_ref()
-        .and_then(|id| workspace.docs.get(id))
+        .and_then(|id| workspace.doc(id))
         .and_then(|doc| {
             doc.model
                 .as_ref()
@@ -139,21 +131,16 @@ fn insert_document(
 ) -> Result<WindowStateResponse, String> {
     let id = format!("tab-{}", state.next_doc_id.fetch_add(1, Ordering::SeqCst));
     let mut workspace = state.workspace.lock().unwrap();
-    workspace.docs.insert(
-        id.clone(),
+    workspace.insert(
+        window_label,
+        id,
         OpenDoc {
             model: Some(model),
             path,
             dirty: false,
             strict_validation,
         },
-    );
-    let window = workspace
-        .windows
-        .entry(window_label.to_string())
-        .or_default();
-    window.tabs.push(id.clone());
-    window.active = Some(id);
+    )?;
     window_state(&workspace, window_label)
 }
 
@@ -250,25 +237,12 @@ pub fn open_file(
     let (model, canonical_path) = load(&path)?;
 
     let existing = {
-        let workspace = state.workspace.lock().unwrap();
-        workspace
-            .docs
-            .iter()
-            .find(|(_, doc)| doc.path.as_deref() == Some(canonical_path.as_str()))
-            .and_then(|(id, _)| {
-                workspace.windows.iter().find_map(|(label, tabs)| {
-                    tabs.tabs.contains(id).then(|| (label.clone(), id.clone()))
-                })
-            })
+        let mut workspace = state.workspace.lock().unwrap();
+        let label = workspace.focus_path(&canonical_path);
+        label.map(|label| (label, window_state(&workspace, window.label())))
     };
-    if let Some((label, id)) = existing {
-        let response = {
-            let mut workspace = state.workspace.lock().unwrap();
-            if let Some(tabs) = workspace.windows.get_mut(&label) {
-                tabs.active = Some(id);
-            }
-            window_state(&workspace, window.label())?
-        };
+    if let Some((label, response)) = existing {
+        let response = response?;
         if let Some(existing_window) = app.get_webview_window(&label) {
             let _ = existing_window.unminimize();
             let _ = existing_window.set_focus();
@@ -309,10 +283,9 @@ pub fn reload_document(
 fn active_strict_validation(state: &AppState, window_label: &str) -> bool {
     let workspace = state.workspace.lock().unwrap();
     workspace
-        .windows
-        .get(window_label)
+        .window(window_label)
         .and_then(|window| window.active.as_ref())
-        .and_then(|id| workspace.docs.get(id))
+        .and_then(|id| workspace.doc(id))
         .is_some_and(|doc| doc.strict_validation)
 }
 
@@ -375,6 +348,15 @@ pub fn open_new_document_window(app: &AppHandle) -> Result<(), String> {
 pub fn open_path_window(app: &AppHandle, path: &Path) -> Result<(), String> {
     let (model, canonical_path) = load(&path.to_string_lossy())?;
     let state = app.state::<AppState>();
+    let existing = state.workspace.lock().unwrap().focus_path(&canonical_path);
+    if let Some(label) = existing {
+        if let Some(window) = app.get_webview_window(&label) {
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+            let _ = window.emit("workspace-changed", ());
+        }
+        return Ok(());
+    }
     let window_id = state.next_window_id.fetch_add(1, Ordering::SeqCst);
     let label = format!("doc-{window_id}");
     insert_document(&state, &label, model, Some(canonical_path), false)?;
@@ -402,10 +384,7 @@ pub fn current_document(
     state: State<'_, AppState>,
 ) -> Result<WindowStateResponse, String> {
     let mut workspace = state.workspace.lock().unwrap();
-    workspace
-        .windows
-        .entry(window.label().to_string())
-        .or_default();
+    workspace.ensure_window(window.label());
     window_state(&workspace, window.label())
 }
 
@@ -418,32 +397,7 @@ pub fn close_document(
     state: State<'_, AppState>,
 ) -> Result<WindowStateResponse, String> {
     let mut workspace = state.workspace.lock().unwrap();
-    let id = tab_id
-        .or_else(|| {
-            workspace
-                .windows
-                .get(window.label())
-                .and_then(|tabs| tabs.active.clone())
-        })
-        .ok_or_else(|| "No document open".to_string())?;
-    let tabs = workspace
-        .windows
-        .get_mut(window.label())
-        .ok_or_else(|| "Window is missing".to_string())?;
-    let index = tabs
-        .tabs
-        .iter()
-        .position(|candidate| candidate == &id)
-        .ok_or_else(|| "Tab does not belong to this window".to_string())?;
-    tabs.tabs.remove(index);
-    if tabs.active.as_deref() == Some(&id) {
-        tabs.active = tabs
-            .tabs
-            .get(index)
-            .or_else(|| index.checked_sub(1).and_then(|i| tabs.tabs.get(i)))
-            .cloned();
-    }
-    workspace.docs.remove(&id);
+    workspace.close(window.label(), tab_id.as_deref())?;
     window_state(&workspace, window.label())
 }
 
@@ -454,63 +408,8 @@ pub fn activate_tab(
     state: State<'_, AppState>,
 ) -> Result<WindowStateResponse, String> {
     let mut workspace = state.workspace.lock().unwrap();
-    let tabs = workspace
-        .windows
-        .get_mut(window.label())
-        .ok_or_else(|| "Window is missing".to_string())?;
-    if !tabs.tabs.contains(&tab_id) {
-        return Err("Tab does not belong to this window".to_string());
-    }
-    tabs.active = Some(tab_id);
+    workspace.activate(window.label(), &tab_id)?;
     window_state(&workspace, window.label())
-}
-
-fn move_tab_in_workspace(
-    workspace: &mut Workspace,
-    tab_id: &str,
-    source_label: &str,
-    target_label: &str,
-    target_index: Option<usize>,
-) -> Result<(), String> {
-    let source = workspace
-        .windows
-        .get_mut(source_label)
-        .ok_or_else(|| "Source window is missing".to_string())?;
-    let source_index = source
-        .tabs
-        .iter()
-        .position(|id| id == tab_id)
-        .ok_or_else(|| "Tab does not belong to the source window".to_string())?;
-    let target_index = target_index.map(|index| {
-        if source_label == target_label && index > source_index {
-            index - 1
-        } else {
-            index
-        }
-    });
-    source.tabs.remove(source_index);
-    if source.active.as_deref() == Some(tab_id) {
-        source.active = source
-            .tabs
-            .get(source_index)
-            .or_else(|| {
-                source_index
-                    .checked_sub(1)
-                    .and_then(|index| source.tabs.get(index))
-            })
-            .cloned();
-    }
-
-    let target = workspace
-        .windows
-        .entry(target_label.to_string())
-        .or_default();
-    let index = target_index
-        .unwrap_or(target.tabs.len())
-        .min(target.tabs.len());
-    target.tabs.insert(index, tab_id.to_string());
-    target.active = Some(tab_id.to_string());
-    Ok(())
 }
 
 #[tauri::command]
@@ -523,21 +422,16 @@ pub fn move_tab(
     state: State<'_, AppState>,
 ) -> Result<WindowStateResponse, String> {
     let source_label = window.label().to_string();
+    let target = app
+        .get_webview_window(&target_window)
+        .ok_or_else(|| "Target window is missing".to_string())?;
     let response = {
         let mut workspace = state.workspace.lock().unwrap();
-        move_tab_in_workspace(
-            &mut workspace,
-            &tab_id,
-            &source_label,
-            &target_window,
-            target_index,
-        )?;
+        workspace.move_tab(&tab_id, &source_label, &target_window, target_index)?;
         window_state(&workspace, &source_label)?
     };
-    if let Some(target) = app.get_webview_window(&target_window) {
-        let _ = target.set_focus();
-        let _ = target.emit("workspace-changed", ());
-    }
+    let _ = target.set_focus();
+    let _ = target.emit("workspace-changed", ());
     Ok(response)
 }
 
@@ -553,16 +447,15 @@ pub async fn detach_tab(
     let source_label = window.label().to_string();
     let id = state.next_window_id.fetch_add(1, Ordering::SeqCst);
     let target_label = format!("doc-{id}");
-    {
+    let rollback = {
         let mut workspace = state.workspace.lock().unwrap();
-        move_tab_in_workspace(&mut workspace, &tab_id, &source_label, &target_label, None)?;
-    }
+        workspace.begin_detach(&tab_id, &source_label, &target_label)?
+    };
 
     let built = build_window_at(&app, &target_label, x, y);
     if let Err(error) = built {
         let mut workspace = state.workspace.lock().unwrap();
-        let _ = move_tab_in_workspace(&mut workspace, &tab_id, &target_label, &source_label, None);
-        workspace.windows.remove(&target_label);
+        workspace.rollback_detach(rollback);
         return Err(error.to_string());
     }
 
@@ -571,26 +464,14 @@ pub async fn detach_tab(
 }
 
 pub fn remove_window(state: &AppState, label: &str) {
-    let mut workspace = state.workspace.lock().unwrap();
-    if let Some(window) = workspace.windows.remove(label) {
-        for id in window.tabs {
-            workspace.docs.remove(&id);
-        }
-    }
+    state.workspace.lock().unwrap().remove_window(label);
 }
 
 /// Whether any document other than the calling window's active tab is dirty.
 #[tauri::command]
 pub fn other_documents_dirty(window: WebviewWindow, state: State<'_, AppState>) -> bool {
     let workspace = state.workspace.lock().unwrap();
-    let active = workspace
-        .windows
-        .get(window.label())
-        .and_then(|tabs| tabs.active.as_deref());
-    workspace
-        .docs
-        .iter()
-        .any(|(id, doc)| Some(id.as_str()) != active && doc.dirty)
+    workspace.other_documents_dirty(window.label())
 }
 
 /// Exits the application unconditionally.
@@ -622,17 +503,7 @@ pub fn update_document(
 ) -> Result<DocResponse, String> {
     let model = doc.to_model().map_err(|e| e.to_string())?;
     let mut workspace = state.workspace.lock().unwrap();
-    let belongs_to_window = workspace
-        .windows
-        .get(window.label())
-        .is_some_and(|tabs| tabs.tabs.contains(&tab_id));
-    if !belongs_to_window {
-        return Err("Tab does not belong to this window".to_string());
-    }
-    let state_doc = workspace
-        .docs
-        .get_mut(&tab_id)
-        .ok_or_else(|| "Document is missing".to_string())?;
+    let state_doc = workspace.doc_in_window_mut(window.label(), &tab_id)?;
     state_doc.model = Some(model.clone());
     state_doc.dirty = true;
     respond(
@@ -671,25 +542,10 @@ pub fn save_as(
 ) -> Result<DocResponse, String> {
     let canonical_path = canonical_destination(&path)?;
     let mut workspace = state.workspace.lock().unwrap();
-    let id = active_doc_id(&workspace, window.label())?;
-    if workspace.docs.iter().any(|(other_id, doc)| {
-        other_id != &id && doc.path.as_deref() == Some(canonical_path.as_str())
-    }) {
-        return Err("This file is already open in another tab".to_string());
-    }
-    let doc = workspace
-        .docs
-        .get_mut(&id)
-        .ok_or_else(|| "No document open".to_string())?;
-    let model = doc
-        .model
-        .clone()
-        .ok_or_else(|| "No document open".to_string())?;
-    let saved = write_document(&model, Path::new(&canonical_path))?;
-    doc.model = Some(saved.clone());
-    doc.path = Some(canonical_path.clone());
-    doc.dirty = false;
-    respond(&saved, Some(canonical_path), false, doc.strict_validation)
+    let (saved, strict) = workspace.save_as(window.label(), &canonical_path, |model| {
+        write_document(model, Path::new(&canonical_path))
+    })?;
+    respond(&saved, Some(canonical_path), false, strict)
 }
 
 /// Writes an IES copy without changing the document's path or dirty state.
@@ -704,17 +560,12 @@ pub fn export_ies(
     }
     let destination = canonical_destination(&path)?;
     let workspace = state.workspace.lock().unwrap();
-    if workspace
-        .docs
-        .values()
-        .any(|doc| doc.path.as_deref() == Some(destination.as_str()))
-    {
+    if workspace.path_is_open(&destination) {
         return Err("Cannot export over an open document".into());
     }
     let id = active_doc_id(&workspace, window.label())?;
     let model = workspace
-        .docs
-        .get(&id)
+        .doc(&id)
         .and_then(|doc| doc.model.as_ref())
         .ok_or("No document open")?;
     write_document(model, Path::new(&destination)).map(|_| ())
@@ -813,8 +664,7 @@ pub fn render_polar_svg(
     let workspace = state.workspace.lock().unwrap();
     let id = active_doc_id(&workspace, window.label())?;
     let model = workspace
-        .docs
-        .get(&id)
+        .doc(&id)
         .and_then(|doc| doc.model.as_ref())
         .ok_or_else(|| "No document open".to_string())?;
 
@@ -1004,49 +854,6 @@ mod tests {
             .to_polar_svg(&PolarDiagramOptions::default())
             .expect("polar svg should render");
         assert!(svg.contains("<svg"));
-    }
-
-    #[test]
-    fn moving_active_tab_selects_neighbour_and_activates_destination() {
-        let mut workspace = Workspace::default();
-        workspace.windows.insert(
-            "source".to_string(),
-            crate::state::WindowTabs {
-                tabs: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-                active: Some("b".to_string()),
-            },
-        );
-        workspace.windows.insert(
-            "target".to_string(),
-            crate::state::WindowTabs {
-                tabs: vec!["d".to_string()],
-                active: Some("d".to_string()),
-            },
-        );
-
-        move_tab_in_workspace(&mut workspace, "b", "source", "target", Some(0)).unwrap();
-
-        assert_eq!(workspace.windows["source"].tabs, ["a", "c"]);
-        assert_eq!(workspace.windows["source"].active.as_deref(), Some("c"));
-        assert_eq!(workspace.windows["target"].tabs, ["b", "d"]);
-        assert_eq!(workspace.windows["target"].active.as_deref(), Some("b"));
-    }
-
-    #[test]
-    fn reordering_within_one_window_keeps_exactly_one_copy() {
-        let mut workspace = Workspace::default();
-        workspace.windows.insert(
-            "main".to_string(),
-            crate::state::WindowTabs {
-                tabs: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-                active: Some("a".to_string()),
-            },
-        );
-
-        move_tab_in_workspace(&mut workspace, "a", "main", "main", Some(3)).unwrap();
-
-        assert_eq!(workspace.windows["main"].tabs, ["b", "c", "a"]);
-        assert_eq!(workspace.windows["main"].active.as_deref(), Some("a"));
     }
 
     /// Runs `eulumdat-core`'s validator on a model that trips every warning and
