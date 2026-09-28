@@ -13,22 +13,35 @@ use tauri::{AppHandle, Emitter, EventTarget, Manager, WebviewWindow};
 
 use crate::state::AppState;
 
-/// Hands `path` to the frontend: live via an `open-file` event to one window
-/// once the UI is listening, otherwise queued for `take_pending_open`. The
-/// receiving window opens it in a tab, or focuses its existing tab.
-pub fn deliver(app: &AppHandle, path: &Path) {
-    let path = path.to_string_lossy().into_owned();
+/// Hands paths to the frontend in order, live or queued until it is ready.
+pub fn deliver(app: &AppHandle, paths: &[PathBuf]) {
+    if paths.is_empty() {
+        return;
+    }
+    let paths: Vec<String> = paths
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
     let state = app.state::<AppState>();
     if !state.frontend_ready.load(Ordering::SeqCst) {
-        *state.pending_open.lock().unwrap() = Some(path);
+        state.pending_open.lock().unwrap().extend(paths);
     } else if let Some(window) = focus_window(app) {
         let _ = app.emit_to(
             EventTarget::webview_window(window.label()),
             "open-file",
-            &path,
+            &paths,
         );
     } else {
-        let _ = crate::commands::open_path_window(app, Path::new(&path));
+        for (index, path) in paths.iter().enumerate() {
+            if crate::commands::open_path_window(app, Path::new(path)).is_ok() {
+                state
+                    .pending_open
+                    .lock()
+                    .unwrap()
+                    .extend(paths[index + 1..].iter().cloned());
+                break;
+            }
+        }
     }
 }
 
@@ -62,11 +75,11 @@ pub fn is_photometric(path: &Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("ldt") || e.eq_ignore_ascii_case("ies"))
 }
 
-/// Finds the first photometric file among launch arguments, skipping the
+/// Finds photometric files among launch arguments, skipping the
 /// executable path. Relative paths are resolved against `cwd`, the working
 /// directory of the process that received them.
 #[cfg_attr(target_os = "macos", allow(dead_code))]
-pub fn photometric_path_from_args<I, S>(args: I, cwd: &Path) -> Option<PathBuf>
+pub fn photometric_paths_from_args<I, S>(args: I, cwd: &Path) -> Vec<PathBuf>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -74,8 +87,9 @@ where
     args.into_iter()
         .skip(1)
         .map(|a| PathBuf::from(a.as_ref()))
-        .find(|p| is_photometric(p))
+        .filter(|p| is_photometric(p))
         .map(|p| if p.is_absolute() { p } else { cwd.join(p) })
+        .collect()
 }
 
 #[cfg(test)]
@@ -85,11 +99,11 @@ mod tests {
     #[test]
     fn skips_the_executable_path() {
         let args = ["/opt/app/weird.ldt"];
-        assert_eq!(photometric_path_from_args(args, Path::new("/")), None);
+        assert!(photometric_paths_from_args(args, Path::new("/")).is_empty());
     }
 
     #[test]
-    fn picks_the_first_ldt_argument() {
+    fn keeps_all_ldt_arguments_in_order() {
         let cwd = std::env::current_dir().unwrap();
         let first = cwd.join("a.LDT");
         let second = cwd.join("b.ldt");
@@ -100,8 +114,8 @@ mod tests {
             second.to_string_lossy().into_owned(),
         ];
         assert_eq!(
-            photometric_path_from_args(args, Path::new("/")),
-            Some(first)
+            photometric_paths_from_args(args, Path::new("/")),
+            vec![first, second]
         );
     }
 
@@ -110,8 +124,8 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         let args = ["app", "lamp.ldt"];
         assert_eq!(
-            photometric_path_from_args(args, &cwd),
-            Some(cwd.join("lamp.ldt"))
+            photometric_paths_from_args(args, &cwd),
+            vec![cwd.join("lamp.ldt")]
         );
     }
 
@@ -119,14 +133,14 @@ mod tests {
     fn accepts_ies_files_case_insensitively() {
         let args = ["app", "lamp.IES"];
         assert_eq!(
-            photometric_path_from_args(args, Path::new("/tmp")),
-            Some(PathBuf::from("/tmp/lamp.IES"))
+            photometric_paths_from_args(args, Path::new("/tmp")),
+            vec![PathBuf::from("/tmp/lamp.IES")]
         );
     }
 
     #[test]
     fn ignores_non_photometric_arguments() {
         let args = ["app", "notes.txt", "ldt"];
-        assert_eq!(photometric_path_from_args(args, Path::new("/")), None);
+        assert!(photometric_paths_from_args(args, Path::new("/")).is_empty());
     }
 }

@@ -27,7 +27,7 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
 const api = await import('./api');
 const dialog = await import('@tauri-apps/plugin-dialog');
 const { store } = await import('./store.svelte');
-const { closeDocument, newDocument, openPath, quitApplication, saveDocument, exportIes } = await import(
+const { closeDocument, newDocument, openFileDialog, openPath, openPaths, quitApplication, saveDocument, exportIes } = await import(
   './documentActions'
 );
 
@@ -134,6 +134,60 @@ it('exports IES as a separate file', async () => {
 });
 
 describe('opening documents', () => {
+  it('opens every selected file in order', async () => {
+    vi.mocked(dialog.open).mockResolvedValue(['/tmp/a.ldt', '/tmp/b.ies']);
+    vi.mocked(api.openFile)
+      .mockResolvedValueOnce(makeWindowResponse({ path: '/tmp/a.ldt' }))
+      .mockResolvedValueOnce(makeWindowResponse({ path: '/tmp/b.ies' }));
+
+    await openFileDialog();
+
+    expect(dialog.open).toHaveBeenCalledWith({
+      multiple: true,
+      filters: [{ name: 'Photometric files', extensions: ['ldt', 'ies'] }]
+    });
+    expect(vi.mocked(api.openFile).mock.calls).toEqual([['/tmp/a.ldt'], ['/tmp/b.ies']]);
+    expect(store.path).toBe('/tmp/b.ies');
+  });
+
+  it('keeps opening after a bad file and reports the failure', async () => {
+    vi.mocked(api.openFile)
+      .mockRejectedValueOnce('invalid file')
+      .mockResolvedValueOnce(makeWindowResponse({ path: '/tmp/good.ies' }));
+
+    await openPaths(['/tmp/bad.ldt', '/tmp/good.ies']);
+
+    expect(vi.mocked(api.openFile).mock.calls).toEqual([['/tmp/bad.ldt'], ['/tmp/good.ies']]);
+    expect(store.path).toBe('/tmp/good.ies');
+    expect(store.error).toBe('/tmp/bad.ldt: invalid file');
+  });
+
+  it('serializes overlapping open requests', async () => {
+    let resolveFirst!: (response: WindowStateResponse) => void;
+    vi.mocked(api.openFile)
+      .mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockResolvedValueOnce(makeWindowResponse({ path: '/tmp/b.ies' }));
+
+    const first = openPaths(['/tmp/a.ldt']);
+    const second = openPaths(['/tmp/b.ies']);
+    await vi.waitFor(() => expect(api.openFile).toHaveBeenCalledOnce());
+    expect(vi.mocked(api.openFile).mock.calls).toEqual([['/tmp/a.ldt']]);
+
+    resolveFirst(makeWindowResponse({ path: '/tmp/a.ldt' }));
+    await Promise.all([first, second]);
+
+    expect(vi.mocked(api.openFile).mock.calls).toEqual([['/tmp/a.ldt'], ['/tmp/b.ies']]);
+    expect(store.path).toBe('/tmp/b.ies');
+  });
+
+  it('does nothing when the open dialog is cancelled', async () => {
+    vi.mocked(dialog.open).mockResolvedValue(null);
+
+    await openFileDialog();
+
+    expect(api.openFile).not.toHaveBeenCalled();
+  });
+
   it('opens a file in this window when it is empty', async () => {
     vi.mocked(api.openFile).mockResolvedValue(makeWindowResponse({ path: '/tmp/a.ldt' }));
 

@@ -4,7 +4,7 @@
   import {
     newDocument,
     openFileDialog,
-    openPath,
+    openPaths,
     closeDocument,
     saveDocument,
     saveDocumentAs,
@@ -150,21 +150,20 @@
         dragOver = false;
       } else if (p.type === 'drop') {
         dragOver = false;
-        const file = p.paths.find(isPhotometric);
-        if (file) openPath(file);
+        openPaths(p.paths.filter(isPhotometric));
       }
     });
 
     // A window opened for a file or new document starts with it loaded. Then
-    // files opened via the OS file association: a pending one queued before the
-    // UI was ready, plus a live event for opens while the app is running. Drain
+    // files opened via the OS file association: pending files queued before the
+    // UI was ready, plus live events for opens while the app is running. Drain
     // the queue only once the listener exists so no open falls between the two.
-    const unlistenOpen = appWindow.listen<string>('open-file', (e) => openPath(e.payload));
+    const unlistenOpen = appWindow.listen<string[]>('open-file', (e) => openPaths(e.payload));
     const unlistenWorkspace = appWindow.listen('workspace-changed', () => store.loadCurrent());
     Promise.all([unlistenOpen, unlistenWorkspace, store.loadCurrent()])
       .then(() => api.takePendingOpen())
-      .then((path) => {
-        if (path) openPath(path);
+      .then((paths) => {
+        if (paths.length > 0) openPaths(paths);
       });
 
     return () => {
@@ -258,7 +257,7 @@
             <button class="btn primary" onclick={openFileDialog}>Open photometric file…</button>
             <button class="btn" onclick={newDocument}>New luminaire</button>
           </div>
-          <p class="welcome-hint">or drag and drop a <code>.ldt</code> or <code>.ies</code> file anywhere</p>
+          <p class="welcome-hint">or drag and drop <code>.ldt</code> or <code>.ies</code> files anywhere</p>
           {#if store.error}<p class="err">{store.error}</p>{/if}
         </div>
       {:else}
@@ -291,7 +290,7 @@
     <div class="dropzone">
       <div class="dropzone-card">
         <div class="logo">◐</div>
-        <p>Drop to open <code>.ldt</code> or <code>.ies</code> file</p>
+        <p>Drop to open <code>.ldt</code> or <code>.ies</code> files</p>
       </div>
     </div>
   {/if}
@@ -466,6 +465,8 @@
   }
   .err {
     color: var(--danger);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .dropzone {
     position: fixed;

@@ -9,13 +9,21 @@ export const PHOTOMETRIC_FILTERS = [
 ];
 
 export async function openFileDialog(): Promise<void> {
-  const path = await openDialog({ multiple: false, filters: PHOTOMETRIC_FILTERS });
-  if (typeof path === 'string') await openPath(path);
+  const paths = await openDialog({
+    multiple: true,
+    filters: [{ name: 'Photometric files', extensions: ['ldt', 'ies'] }]
+  });
+  if (paths) await openPaths(Array.isArray(paths) ? paths : [paths]);
 }
 
 /** Opens `path` in a new tab, or focuses its existing tab in any window. */
 export async function openPath(path: string): Promise<void> {
-  await store.open(path);
+  await openPaths([path]);
+}
+
+/** Opens selected files in order, leaving the last successful file active. */
+export async function openPaths(paths: string[]): Promise<void> {
+  await store.openMany(paths);
 }
 
 /** Starts a new luminaire in a new tab. */
