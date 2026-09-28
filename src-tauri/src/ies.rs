@@ -45,6 +45,42 @@ fn near(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-6
 }
 
+fn ies_luminous_dimensions(
+    version: &str,
+    width: f64,
+    length: f64,
+    height: f64,
+) -> Result<(f64, f64, f64), String> {
+    let old_circle = matches!(version, "IESNA:LM-63-1986" | "IESNA91" | "IESNA:LM-63-1995")
+        && width < 0.0
+        && near(length, 0.0)
+        && height >= 0.0;
+    let new_circle = matches!(version, "IESNA:LM-63-2002" | "IES:LM-63-2019")
+        && width < 0.0
+        && length < 0.0
+        && near(width, length)
+        && height >= 0.0;
+    if old_circle || new_circle {
+        return Ok((width.abs(), 0.0, height));
+    }
+    if width < 0.0 || length < 0.0 || height < 0.0 {
+        return Err("IES luminous shape cannot be represented as EULUMDAT dimensions".into());
+    }
+    Ok((length, width, height))
+}
+
+fn uniform_step(values: &[f64]) -> f64 {
+    let Some(pair) = values.get(0..2) else {
+        return 0.0;
+    };
+    let step = pair[1] - pair[0];
+    if values.windows(2).all(|pair| near(pair[1] - pair[0], step)) {
+        step
+    } else {
+        0.0
+    }
+}
+
 /// IES numeric data is ASCII, but published metadata may use Windows-1252.
 pub fn parse_bytes(input: &[u8], file_name: &str) -> Result<Eulumdat, String> {
     if let Ok(text) = std::str::from_utf8(input) {
@@ -106,13 +142,18 @@ pub fn parse(text: &str, file_name: &str) -> Result<Eulumdat, String> {
     let width = number(&mut tokens, "luminous width")? * millimeters;
     let length = number(&mut tokens, "luminous length")? * millimeters;
     let height = number(&mut tokens, "luminous height")? * millimeters;
+    let (length, width, height) = ies_luminous_dimensions(first, width, length, height)?;
     let ballast = number(&mut tokens, "ballast factor")?;
     let ballast_lamp = number(&mut tokens, "ballast-lamp factor")?;
     let watts = number(&mut tokens, "input watts")?;
-    let gamma = angles(&mut tokens, vertical_count, "vertical angles")?;
+    let mut gamma = angles(&mut tokens, vertical_count, "vertical angles")?;
     let horizontal = angles(&mut tokens, horizontal_count, "horizontal angles")?;
-    if !near(gamma[0], 0.0) || gamma.last().is_some_and(|last| *last > 180.0) {
-        return Err("IES Type C vertical angles must start at 0 and end at or before 180".into());
+    if !(near(gamma[0], 0.0) || near(gamma[0], 90.0))
+        || gamma.last().is_some_and(|last| *last > 180.0)
+    {
+        return Err(
+            "IES Type C vertical angles must start at 0 or 90 and end at or before 180".into(),
+        );
     }
     if !near(horizontal[0], 0.0) {
         return Err("IES Type C horizontal angles must start at 0".into());
@@ -136,6 +177,13 @@ pub fn parse(text: &str, file_name: &str) -> Result<Eulumdat, String> {
                 .map(|_| number(&mut tokens, "candela value"))
                 .collect::<Result<Vec<_>, _>>()?,
         );
+    }
+    if near(gamma[0], 90.0) {
+        // EULUMDAT requires gamma zero. The missing downward hemisphere has no light.
+        gamma.insert(0, 0.0);
+        for row in &mut rows {
+            row.insert(0, 0.0);
+        }
     }
     let scale = multiplier * ballast * ballast_lamp;
     if !scale.is_finite() || scale <= 0.0 || rows.iter().flatten().any(|value| *value < 0.0) {
@@ -233,8 +281,8 @@ pub fn parse(text: &str, file_name: &str) -> Result<Eulumdat, String> {
     model
         .replace_distribution(Distribution {
             symmetry,
-            c_plane_step: horizontal.get(1).map_or(0.0, |next| next - horizontal[0]),
-            gamma_step: gamma.get(1).map_or(0.0, |next| next - gamma[0]),
+            c_plane_step: uniform_step(&horizontal),
+            gamma_step: uniform_step(&gamma),
             c_planes,
             gamma_angles: gamma,
             intensities: rows,
@@ -319,12 +367,18 @@ pub fn serialize(model: &Eulumdat) -> Result<String, String> {
                 .is_some_and(|last| !near(*last, 360.0)));
     let horizontal_count = indices.len() + usize::from(append_c360);
     let watts = lamp.wattage_including_ballast;
+    let (ies_width, ies_length) =
+        if model.luminous_area_width == 0.0 && model.luminous_area_length > 0.0 {
+            (-model.luminous_area_length, -model.luminous_area_length)
+        } else {
+            (model.luminous_area_width, model.luminous_area_length)
+        };
     out.push_str(&format!(
         "1 -1 1 {} {} 1 2\n{} {} {}\n1 1 {}\n",
         model.gamma_angles.len(),
         horizontal_count,
-        model.luminous_area_width / 1000.0,
-        model.luminous_area_length / 1000.0,
+        ies_width / 1000.0,
+        ies_length / 1000.0,
         model.luminous_area_height_c0 / 1000.0,
         watts
     ));
@@ -388,6 +442,75 @@ mod tests {
         let reparsed = parse(&exported, "copy.ies").unwrap();
         assert_eq!(reparsed.intensities, model.intensities);
         assert_eq!(reparsed.c_planes, model.c_planes);
+    }
+
+    #[test]
+    fn converts_circular_luminous_dimensions_for_old_and_new_ies() {
+        let base = fixture("0 90", 2, "100 50 10 200 80 20", "1000");
+        for (version, dimensions) in [
+            ("IESNA:LM-63-2002", "-0.4 -0.4 0.1"),
+            ("IESNA:LM-63-1995", "-0.4 0 0.1"),
+        ] {
+            let input = base
+                .replace("IESNA:LM-63-2002", version)
+                .replace("0.2 0.4 0.1", dimensions);
+            let model = parse(&input, "disk.ies").unwrap();
+            assert_eq!(model.luminous_area_length, 400.0);
+            assert_eq!(model.luminous_area_width, 0.0);
+            assert_eq!(model.luminous_area_height_c0, 100.0);
+            let saved = model.to_text();
+            let (ldt, _) = Eulumdat::parse(&saved).unwrap();
+            assert_eq!(ldt.luminous_area_length, 400.0);
+            assert_eq!(ldt.luminous_area_width, 0.0);
+            let exported = serialize(&ldt).unwrap();
+            assert!(exported.lines().any(|line| line == "-0.4 -0.4 0.1"));
+        }
+    }
+
+    #[test]
+    fn rejects_signed_ies_shapes_without_eulumdat_equivalent() {
+        let input =
+            fixture("0 90", 2, "100 50 10 200 80 20", "1000").replace("0.2 0.4 0.1", "-0.2 -0.4 0");
+        assert!(parse(&input, "ellipse.ies")
+            .unwrap_err()
+            .contains("luminous shape"));
+    }
+
+    #[test]
+    fn nonuniform_angles_have_zero_step_in_ldt() {
+        let input = fixture("0 90", 2, "100 50 10 200 80 20", "1000")
+            .replace("0 90 180\n0 90", "0 10 90\n0 90");
+        let model = parse(&input, "irregular.ies").unwrap();
+        assert_eq!(model.gamma_angles, vec![0.0, 10.0, 90.0]);
+        assert_eq!(model.gamma_step, 0.0);
+        let (ldt, _) = Eulumdat::parse(&model.to_text()).unwrap();
+        assert_eq!(ldt.gamma_step, 0.0);
+        assert_eq!(ldt.gamma_angles, model.gamma_angles);
+
+        let horizontal = fixture(
+            "0 90 180 270 300 360",
+            6,
+            "100 50 10 200 80 20 300 90 30 400 100 40 150 60 15 101 51 11",
+            "1000",
+        );
+        let model = parse(&horizontal, "irregular-c.ies").unwrap();
+        assert_eq!(model.c_plane_step, 0.0);
+        let (ldt, _) = Eulumdat::parse(&model.to_text()).unwrap();
+        assert_eq!(ldt.c_plane_step, 0.0);
+        assert_eq!(ldt.c_planes, model.c_planes);
+    }
+
+    #[test]
+    fn imports_uplight_only_type_c_grid() {
+        let input = fixture("0 90", 2, "100 50 10 200 80 20", "1000")
+            .replace("0 90 180\n0 90", "90 135 180\n0 90");
+        let model = parse(&input, "uplight.ies").unwrap();
+        assert_eq!(model.gamma_angles, vec![0.0, 90.0, 135.0, 180.0]);
+        assert_eq!(model.gamma_step, 0.0);
+        assert!(model.intensities.iter().all(|row| row[0] == 0.0));
+        let (ldt, _) = Eulumdat::parse(&model.to_text()).unwrap();
+        assert_eq!(ldt.gamma_angles, model.gamma_angles);
+        assert_eq!(ldt.intensities, model.intensities);
     }
 
     #[test]
