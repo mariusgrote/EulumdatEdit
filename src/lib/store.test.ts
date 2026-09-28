@@ -209,11 +209,47 @@ describe('debounced commit', () => {
     expect(store.error).toBe('invalid draft');
   });
 
+  it('commits a corrected draft even when an earlier update fails', async () => {
+    const update = deferred<DocResponse>();
+    vi.mocked(api.updateDocument).mockReturnValueOnce(update.promise);
+    vi.mocked(api.save).mockImplementation(async () =>
+      makeResponse({ doc: vi.mocked(api.updateDocument).mock.calls[1][0] })
+    );
+    editLuminaireName('First draft');
+    vi.advanceTimersByTime(250);
+    editLuminaireName('Second draft');
+
+    const saving = store.save();
+    update.reject('invalid draft');
+    await saving;
+
+    expect(api.updateDocument).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(api.updateDocument).mock.calls[1][0].luminaireName).toBe('Second draft');
+    expect(order(vi.mocked(api.updateDocument))).toBeLessThan(order(vi.mocked(api.save)));
+    expect(api.save).toHaveBeenCalledOnce();
+    expect(store.doc?.luminaireName).toBe('Second draft');
+    expect(store.error).toBeNull();
+  });
+
+  it('retries a failed update before a later save', async () => {
+    vi.mocked(api.updateDocument).mockRejectedValueOnce('invalid draft');
+    editLuminaireName('Uncommitted draft');
+
+    await store.save();
+    expect(api.save).not.toHaveBeenCalled();
+    expect(store.error).toBe('invalid draft');
+
+    await store.save();
+    expect(api.updateDocument).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(api.updateDocument).mock.calls[1][0].luminaireName).toBe('Uncommitted draft');
+    expect(api.save).toHaveBeenCalledOnce();
+  });
+
   it('does not apply a late update to another active tab', async () => {
     const update = deferred<DocResponse>();
     vi.mocked(api.updateDocument).mockReturnValue(update.promise);
     editLuminaireName('First tab edit');
-    vi.advanceTimersByTime(250);
+    const updating = store.commit();
 
     store.tabs.push({ id: 'tab-2', title: 'second.ldt', path: '/tmp/second.ldt', dirty: false });
     store.activeTabId = 'tab-2';
@@ -221,7 +257,7 @@ describe('debounced commit', () => {
     store.path = '/tmp/second.ldt';
     store.dirty = false;
     update.resolve(makeResponse({ path: '/tmp/first.ldt', dirty: true }));
-    await store.flushEdits();
+    await updating;
 
     expect(store.doc?.luminaireName).toBe('Second tab');
     expect(store.path).toBe('/tmp/second.ldt');
@@ -308,6 +344,26 @@ describe('flush before backend model operations', () => {
     expect(vi.mocked(api.updateDocument).mock.calls[0][0].luminaireName).toBe('Typed during save');
   });
 
+  it('sends an edit made during a save only after the write finishes', async () => {
+    const write = deferred<DocResponse>();
+    vi.mocked(api.save).mockReturnValue(write.promise);
+
+    const saving = store.save();
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    editLuminaireName('Typed during save');
+    await vi.advanceTimersByTimeAsync(250);
+    expect(api.updateDocument).not.toHaveBeenCalled();
+
+    write.resolve(makeResponse());
+    await saving;
+    await store.flushEdits();
+
+    expect(order(vi.mocked(api.save))).toBeLessThan(order(vi.mocked(api.updateDocument)));
+    expect(vi.mocked(api.updateDocument).mock.calls[0][0].luminaireName).toBe('Typed during save');
+    expect(store.doc?.luminaireName).toBe('Typed during save');
+    expect(store.dirty).toBe(true);
+  });
+
   it('saveAs() commits the pending edit first', async () => {
     editLuminaireName('Saved as');
     await store.saveAs('/tmp/other.ldt');
@@ -381,6 +437,27 @@ describe('flush before backend model operations', () => {
     expect(store.activeTabId).toBe('tab-2');
     expect(store.doc?.luminaireName).toBe('Second tab');
     expect(store.path).toBe('/tmp/second.ldt');
+  });
+
+  it('ignores a save response if another tab became active', async () => {
+    const write = deferred<DocResponse>();
+    vi.mocked(api.save).mockReturnValue(write.promise);
+    const saving = store.save();
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+
+    store.tabs.push({ id: 'tab-2', title: 'second.ldt', path: '/tmp/second.ldt', dirty: false });
+    store.activeTabId = 'tab-2';
+    store.doc = { ...makeDoc(), luminaireName: 'Second tab' };
+    store.path = '/tmp/second.ldt';
+    store.dirty = false;
+
+    write.resolve(makeResponse({ path: '/tmp/first.ies' }));
+    await saving;
+
+    expect(store.doc?.luminaireName).toBe('Second tab');
+    expect(store.path).toBe('/tmp/second.ldt');
+    expect(store.tabs[1]).toMatchObject({ title: 'second.ldt', dirty: false });
+    await store.close('tab-1');
   });
 
   it('waits for a pending Save As before closing its tab', async () => {
