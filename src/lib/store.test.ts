@@ -187,7 +187,7 @@ describe('debounced commit', () => {
     vi.advanceTimersByTime(250);
 
     const saving = store.save();
-    await Promise.resolve();
+    for (let i = 0; i < 5; i++) await Promise.resolve();
     expect(api.save).not.toHaveBeenCalled();
 
     update.resolve(makeResponse({ dirty: true }));
@@ -295,7 +295,7 @@ describe('flush before backend model operations', () => {
     vi.mocked(api.save).mockReturnValue(write.promise);
 
     const saving = store.save();
-    await Promise.resolve();
+    for (let i = 0; i < 5; i++) await Promise.resolve();
     expect(api.save).toHaveBeenCalledOnce();
     editLuminaireName('Typed during save');
     write.resolve(makeResponse());
@@ -335,7 +335,7 @@ describe('flush before backend model operations', () => {
     vi.mocked(api.saveAs).mockReturnValue(write.promise);
 
     const saving = store.saveAs('/tmp/other.ies');
-    await Promise.resolve();
+    for (let i = 0; i < 5; i++) await Promise.resolve();
     expect(api.saveAs).toHaveBeenCalledOnce();
     editLuminaireName('Typed during Save As');
     write.resolve(makeResponse({ path: '/tmp/other.ies' }));
@@ -349,6 +349,56 @@ describe('flush before backend model operations', () => {
       title: 'other.ies',
       dirty: true
     });
+  });
+
+  it('waits for a pending save before switching tabs', async () => {
+    const write = deferred<DocResponse>();
+    vi.mocked(api.save).mockReturnValue(write.promise);
+    store.tabs.push({ id: 'tab-2', title: 'second.ldt', path: '/tmp/second.ldt', dirty: false });
+    vi.mocked(api.activateTab).mockResolvedValue({
+      document: makeResponse({
+        doc: { ...makeDoc(), luminaireName: 'Second tab' },
+        path: '/tmp/second.ldt'
+      }),
+      tabs: [
+        { id: 'tab-1', title: 'test.ldt', path: '/tmp/test.ldt', dirty: false },
+        { id: 'tab-2', title: 'second.ldt', path: '/tmp/second.ldt', dirty: false }
+      ],
+      activeTabId: 'tab-2'
+    });
+
+    const saving = store.save();
+    const switching = store.activateTab('tab-2');
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(api.save).toHaveBeenCalledOnce();
+    expect(api.activateTab).not.toHaveBeenCalled();
+
+    write.resolve(makeResponse());
+    await saving;
+    await switching;
+
+    expect(order(vi.mocked(api.save))).toBeLessThan(order(vi.mocked(api.activateTab)));
+    expect(store.activeTabId).toBe('tab-2');
+    expect(store.doc?.luminaireName).toBe('Second tab');
+    expect(store.path).toBe('/tmp/second.ldt');
+  });
+
+  it('waits for a pending Save As before closing its tab', async () => {
+    const write = deferred<DocResponse>();
+    vi.mocked(api.saveAs).mockReturnValue(write.promise);
+
+    const saving = store.saveAs('/tmp/other.ies');
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(api.saveAs).toHaveBeenCalledOnce();
+    const closing = store.close();
+    expect(api.closeDocument).not.toHaveBeenCalled();
+
+    write.resolve(makeResponse({ path: '/tmp/other.ies' }));
+    await saving;
+    await closing;
+
+    expect(order(vi.mocked(api.saveAs))).toBeLessThan(order(vi.mocked(api.closeDocument)));
+    expect(store.doc).toBeNull();
   });
 
   it('exportIes() includes a pending edit and keeps the document dirty', async () => {
