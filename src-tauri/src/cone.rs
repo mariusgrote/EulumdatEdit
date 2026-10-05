@@ -31,10 +31,8 @@ fn profile(model: &Eulumdat, c: f64) -> Option<&[f64]> {
             }
         }
         Symmetry::C90C270 => {
-            if c < 90.0 {
-                180.0 - c
-            } else if c > 270.0 {
-                540.0 - c
+            if c > 90.0 && c < 270.0 {
+                (180.0 - c).rem_euclid(360.0)
             } else {
                 c
             }
@@ -48,22 +46,28 @@ fn profile(model: &Eulumdat, c: f64) -> Option<&[f64]> {
             }
         }
     };
-    let index = model
-        .c_planes
-        .iter()
-        .position(|v| (v - effective).abs() < 1e-6)?;
-    let offset = if model.symmetry == Symmetry::C90C270 {
+    let index = if model.symmetry == Symmetry::C90C270 {
+        // ISYM 3 starts at C270 and wraps through C0 to C90. Rank the
+        // stored angles by that offset, as eulumdat-core does, rather than
+        // assuming evenly spaced planes or indexing from C90.
+        let mut offsets: Vec<f64> = model
+            .c_planes
+            .iter()
+            .filter(|angle| angle.is_finite())
+            .map(|angle| (angle - 270.0).rem_euclid(360.0))
+            .filter(|offset| *offset <= 180.0 + 1e-6)
+            .collect();
+        offsets.sort_by(f64::total_cmp);
+        offsets.dedup_by(|next, kept| (*next - *kept).abs() < 1e-6);
+        let offset = (effective - 270.0).rem_euclid(360.0);
+        offsets.iter().position(|v| (v - offset).abs() < 1e-6)?
+    } else {
         model
             .c_planes
             .iter()
-            .position(|v| (v - 90.0).abs() < 1e-6)?
-    } else {
-        0
+            .position(|v| (v - effective).abs() < 1e-6)?
     };
-    model
-        .intensities
-        .get(index.checked_sub(offset)?)
-        .map(Vec::as_slice)
+    model.intensities.get(index).map(Vec::as_slice)
 }
 
 fn crossing(angles: &[f64], values: &[f64], threshold: f64) -> Option<f64> {
@@ -312,12 +316,74 @@ mod tests {
         assert!(calculate(&model, "c0c180").is_err());
     }
     #[test]
+    fn c90_symmetry_preserves_asymmetric_sides() {
+        let mut model = fixture();
+        model.symmetry = Symmetry::C90C270;
+        model.c_planes = vec![0.0, 90.0, 180.0, 270.0];
+        // ISYM 3 stores C270, C0, C90, in that order.
+        model.intensities = vec![
+            vec![1000.0, 750.0, 250.0, 0.0],
+            vec![1000.0, 500.0, 0.0, 0.0],
+            vec![1000.0, 250.0, 0.0, 0.0],
+        ];
+        let cone = calculate(&model, "c90c270").unwrap();
+        assert_eq!(cone.left, 45.0);
+        assert_eq!(cone.right, 20.0);
+        let left_lux = cone.edge_cd * cone.left.to_radians().cos().powi(3);
+        let right_lux = cone.edge_cd * cone.right.to_radians().cos().powi(3);
+        assert!((left_lux - 707.1067812).abs() < 1e-6);
+        assert!((right_lux - 1659.5389312).abs() < 1e-6);
+        let mirrored = calculate(&model, "c0c180").unwrap();
+        assert_eq!(mirrored.left, 30.0);
+        assert_eq!(mirrored.right, 30.0);
+        let svg = render(
+            &model,
+            &ConeOptions {
+                size: 520,
+                planes: vec!["c90c270".into()],
+                max_distance: 6.0,
+            },
+        )
+        .unwrap();
+        assert!(svg.contains(">707 / 1660</text>"));
+        assert!(!svg.contains(">1660 / 707</text>"));
+    }
+
+    #[test]
+    fn c90_symmetry_maps_irregular_planes_across_zero() {
+        let mut model = fixture();
+        model.symmetry = Symmetry::C90C270;
+        model.c_planes = vec![0.0, 25.0, 90.0, 180.0, 270.0, 310.0, 360.0];
+        model.intensities = (1..=5).map(|value| vec![value as f64; 4]).collect();
+        for (angle, expected) in [
+            (270.0, 1.0),
+            (310.0, 2.0),
+            (0.0, 3.0),
+            (180.0, 3.0),
+            (25.0, 4.0),
+            (155.0, 4.0),
+            (90.0, 5.0),
+        ] {
+            assert_eq!(profile(&model, angle).unwrap(), &[expected; 4]);
+        }
+        assert!(profile(&model, 45.0).is_none());
+        model.intensities.pop();
+        assert!(profile(&model, 90.0).is_none());
+    }
+
+    #[test]
     fn maps_c90_symmetry_and_renders_six_steps() {
         let mut model = fixture();
         model.symmetry = Symmetry::C90C270;
         model.c_planes = vec![0.0, 90.0, 180.0, 270.0];
-        model.intensities = vec![model.intensities[0].clone(); 3];
-        assert!(calculate(&model, "c0c180").is_ok());
+        model.intensities = vec![
+            vec![1000.0, 750.0, 250.0, 0.0],
+            vec![1000.0, 500.0, 0.0, 0.0],
+            vec![1000.0, 250.0, 0.0, 0.0],
+        ];
+        let cone = calculate(&model, "c0c180").unwrap();
+        assert_eq!(cone.left, 30.0);
+        assert_eq!(cone.right, 30.0);
         let svg = render(
             &model,
             &ConeOptions {
