@@ -1,6 +1,7 @@
 //! EulumdatEdit Tauri backend.
 
 mod commands;
+mod cone;
 mod dto;
 mod ies;
 #[cfg(target_os = "macos")]
@@ -53,6 +54,7 @@ pub fn run() {
             commands::scale_to_100_percent,
             commands::set_strict_validation,
             commands::render_polar_svg,
+            commands::render_cone_svg,
             commands::write_bytes,
         ])
         .on_window_event(|window, event| {

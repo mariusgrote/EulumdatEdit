@@ -706,6 +706,22 @@ pub fn render_polar_svg(
     model.to_polar_svg(&opts).map_err(|e| e.to_string())
 }
 
+/// Renders the active document's half-peak cone.
+#[tauri::command]
+pub fn render_cone_svg(
+    options: crate::cone::ConeOptions,
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let workspace = state.workspace.lock().unwrap();
+    let id = active_doc_id(&workspace, window.label())?;
+    let model = workspace
+        .doc(&id)
+        .and_then(|doc| doc.model.as_ref())
+        .ok_or_else(|| "No document open".to_string())?;
+    crate::cone::render(model, &options)
+}
+
 /// Writes raw bytes to a path on disk. Used by the UI to save exported graphs
 /// (SVG markup or rasterized PNG) to a user-chosen location. Restricted to
 /// those export formats so this command is not a general write primitive.

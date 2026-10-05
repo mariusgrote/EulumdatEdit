@@ -14,7 +14,6 @@
 
   let svg = $state('');
   let renderError = $state<string | null>(null);
-  let timer: ReturnType<typeof setTimeout> | null = null;
 
   // Re-render after the Rust model updates (photometry is a proxy for a
   // committed change), when the controls change, or when the size changes.
@@ -22,21 +21,31 @@
     void store.photometry;
     const opts = graph.toOptions(graphState); // synchronous reactive read
     const sz = size;
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(async () => {
+    let cancelled = false;
+    const descriptor = graph;
+    const timer = setTimeout(async () => {
       if (!store.doc) {
         svg = '';
+        renderError = null;
         onsvg?.('');
         return;
       }
       try {
-        svg = await graph.render(opts, sz);
+        const result = await descriptor.render(opts, sz);
+        if (cancelled) return;
+        svg = result;
         renderError = null;
         onsvg?.(svg);
       } catch (e) {
+        if (cancelled) return;
+        svg = '';
         renderError = String(e);
       }
     }, 120);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   });
 </script>
 
