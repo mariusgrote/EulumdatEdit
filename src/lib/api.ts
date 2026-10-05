@@ -1,7 +1,7 @@
 // Typed wrappers around the Tauri commands exposed by the Rust backend.
 
 import { invoke } from '@tauri-apps/api/core';
-import type { DocResponse, EulumdatDoc, PolarOptions, WindowStateResponse } from './types';
+import type { ConeOptions, DocResponse, EulumdatDoc, PolarOptions, WindowStateResponse } from './types';
 
 export function newFromTemplate(): Promise<WindowStateResponse> {
   return invoke('new_from_template');
@@ -101,4 +101,8 @@ export function renderPolarSvg(options: PolarOptions): Promise<string> {
 
 export function writeBytes(path: string, contents: Uint8Array): Promise<void> {
   return invoke('write_bytes', { path: path, contents: Array.from(contents) });
+}
+
+export function renderConeSvg(options: ConeOptions): Promise<string> {
+  return invoke('render_cone_svg', { options });
 }

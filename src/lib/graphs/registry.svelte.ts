@@ -5,8 +5,9 @@
 // changes.
 
 import type { Component } from 'svelte';
-import { renderPolarSvg } from '$lib/api';
+import { renderConeSvg, renderPolarSvg } from '$lib/api';
 import PolarControls from './PolarControls.svelte';
+import ConeControls from './ConeControls.svelte';
 
 /**
  * A visualization the panel can display.
@@ -78,8 +79,26 @@ const polarGraph: GraphType<PolarState, PolarRenderOptions> = {
     })
 };
 
+export class ConeState {
+  planes = $state<Record<string, boolean>>({ c0c180: true, c90c270: true });
+  maxDistance = $state(3);
+}
+
+const coneGraph: GraphType<ConeState, { planes: string[]; maxDistance: number }> = {
+  id: 'cone',
+  label: 'Cone',
+  fileSuffix: 'cone',
+  Controls: ConeControls,
+  createState: () => new ConeState(),
+  toOptions: (s) => ({
+    planes: POLAR_PLANES.slice(0, 2).filter((p) => s.planes[p.id]).map((p) => p.id),
+    maxDistance: s.maxDistance
+  }),
+  render: (opts, size) => renderConeSvg({ ...opts, size })
+};
+
 /** All registered graph types, in display order. The erased `any` parameters
  *  let the host hold heterogeneous descriptors; each descriptor stays strongly
  *  typed at its own definition site. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const GRAPHS: GraphType<any, any>[] = [polarGraph];
+export const GRAPHS: GraphType<any, any>[] = [polarGraph, coneGraph];

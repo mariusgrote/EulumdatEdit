@@ -150,3 +150,9 @@ export const SYMMETRY_LABELS: Record<number, string> = {
   3: 'C90 / C270',
   4: 'C0/C180 and C90/C270'
 };
+
+export interface ConeOptions {
+  size: number;
+  planes: string[];
+  maxDistance: number;
+}
