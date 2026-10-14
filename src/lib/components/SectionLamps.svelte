@@ -1,6 +1,12 @@
 <script lang="ts">
   import { ask } from '@tauri-apps/plugin-dialog';
-  import { canAddLampSet, canRemoveLampSet, MAX_LAMP_SETS } from '$lib/lampSetRules';
+  import {
+    canAddLampSet,
+    canRemoveLampSet,
+    canUseAbsolutePhotometry,
+    storedLampCount,
+    MAX_LAMP_SETS
+  } from '$lib/lampSetRules';
   import { store } from '$lib/store.svelte';
   import type { LampSet } from '$lib/types';
   import NumberField from './NumberField.svelte';
@@ -10,13 +16,14 @@
   const openedFromIes = $derived(store.path?.toLowerCase().endsWith('.ies') ?? false);
   const edit = () => store.edited();
 
-  const canAdd = $derived(canAddLampSet(doc.lamps.length));
+  const absolute = $derived(doc.lamps.some((lamp) => lamp.lampCount < 0));
+  const canAdd = $derived(canAddLampSet(doc.lamps.length, absolute));
   const canRemove = $derived(canRemoveLampSet(doc.lamps.length));
   const removeLabel = (i: number) =>
     canRemove ? `Remove set ${i + 1}` : 'An EULUMDAT file needs at least one lamp set';
 
   function addLamp() {
-    if (!canAddLampSet(doc.lamps.length)) return;
+    if (!canAddLampSet(doc.lamps.length, absolute)) return;
     const fresh: LampSet = {
       lampCount: 1,
       lampType: 'LED',
@@ -26,6 +33,15 @@
       wattageIncludingBallast: 10
     };
     doc.lamps = [...doc.lamps, fresh];
+    edit();
+  }
+
+  function changeMode(event: Event) {
+    const nextAbsolute = (event.currentTarget as HTMLSelectElement).value === 'absolute';
+    if (nextAbsolute && !canUseAbsolutePhotometry(doc.lamps.length)) return;
+    for (const lamp of doc.lamps) {
+      lamp.lampCount = storedLampCount(Math.max(1, Math.abs(lamp.lampCount)), nextAbsolute);
+    }
     edit();
   }
 
@@ -44,6 +60,17 @@
 
 <div class="card">
   <h3>Lamp sets</h3>
+  <div class="field mode-field">
+    <label for="photometry-mode">Photometry mode</label>
+    <select id="photometry-mode" value={absolute ? 'absolute' : 'relative'} onchange={changeMode}
+      aria-describedby={!canUseAbsolutePhotometry(doc.lamps.length) ? 'absolute-set-rule' : undefined}>
+      <option value="relative">Relative</option>
+      <option value="absolute" disabled={!canUseAbsolutePhotometry(doc.lamps.length)}>Absolute</option>
+    </select>
+    {#if !canUseAbsolutePhotometry(doc.lamps.length)}
+      <p id="absolute-set-rule" class="hint">Remove extra lamp sets to use absolute photometry.</p>
+    {/if}
+  </div>
   <div class="lamps">
     {#each doc.lamps as lamp, i (i)}
       <div class="lamp">
@@ -60,9 +87,21 @@
           </button>
         </div>
         <div class="grid-2">
-          <NumberField fieldKey={`lamps.${i}.lampCount`} label="Lamp count" min={0} integer hardMin={0} bind:value={lamp.lampCount} onedit={edit} />
+          <NumberField
+            fieldKey={`lamps.${i}.lampCount`}
+            label={lamp.lampCount < 0 ? 'Emitter count' : 'Lamp count'}
+            min={lamp.lampCount < 0 ? 1 : 0}
+            max={1000}
+            integer
+            hardMin={lamp.lampCount < 0 ? 1 : 0}
+            hardMax={lamp.lampCount < 0 ? 1000 : 2147483647}
+            bind:value={() => Math.abs(lamp.lampCount), (value) => {
+              lamp.lampCount = storedLampCount(value, lamp.lampCount < 0);
+            }}
+            onedit={edit}
+          />
           <TextField fieldKey={`lamps.${i}.lampType`} label="Lamp type" sourceNote={openedFromIes ? 'Not imported from IES' : undefined} bind:value={lamp.lampType} onedit={edit} />
-          <NumberField fieldKey={`lamps.${i}.totalLuminousFlux`} label="Total luminous flux" unit="lm" bind:value={lamp.totalLuminousFlux} onedit={edit} />
+          <NumberField fieldKey={`lamps.${i}.totalLuminousFlux`} label={lamp.lampCount < 0 ? 'Luminaire luminous flux' : 'Total luminous flux'} unit="lm" bind:value={lamp.totalLuminousFlux} onedit={edit} />
           <NumberField fieldKey={`lamps.${i}.wattageIncludingBallast`} label="Wattage incl. ballast" unit="W" step={0.1} bind:value={lamp.wattageIncludingBallast} onedit={edit} />
           <TextField fieldKey={`lamps.${i}.colorTemperature`} label="Color temperature" sourceNote={openedFromIes ? 'Not imported from IES' : undefined} bind:value={lamp.colorTemperature} onedit={edit} />
           <TextField fieldKey={`lamps.${i}.colorRenderingIndex`} label="Color rendering index" sourceNote={openedFromIes ? 'Not imported from IES' : undefined} bind:value={lamp.colorRenderingIndex} onedit={edit} />
@@ -81,13 +120,16 @@
     </button>
     {#if !canAdd}
       <span id="lamp-set-limit" class="hint">
-        An EULUMDAT file allows at most {MAX_LAMP_SETS} lamp sets.
+        {#if absolute}Absolute photometry requires exactly one lamp set.{:else}An EULUMDAT file allows at most {MAX_LAMP_SETS} lamp sets.{/if}
       </span>
     {/if}
   </div>
 </div>
 
 <style>
+  .mode-field {
+    margin-bottom: 14px;
+  }
   .lamps {
     display: flex;
     flex-direction: column;

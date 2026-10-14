@@ -442,6 +442,20 @@ describe('flush before backend model operations', () => {
     expect(store.dirty).toBe(true);
   });
 
+  it('retains the absolute marker while flushing edits before save', async () => {
+    store.doc!.lamps[0].lampCount = -42;
+    store.doc!.lamps[0].totalLuminousFlux = 2500;
+    const saved = structuredClone({ ...makeDoc(), lamps: [{ ...store.doc!.lamps[0] }] });
+    vi.mocked(api.save).mockResolvedValue(makeResponse({ doc: saved }));
+    store.edited();
+    await store.save();
+
+    const sent = vi.mocked(api.updateDocument).mock.calls[0][0];
+    expect(sent.lamps[0].lampCount).toBe(-42);
+    expect(sent.lamps[0].totalLuminousFlux).toBe(2500);
+    expect(store.doc?.lamps[0].lampCount).toBe(-42);
+  });
+
   it('saveAs() commits the pending edit first', async () => {
     editLuminaireName('Saved as');
     await store.saveAs('/tmp/other.ldt');

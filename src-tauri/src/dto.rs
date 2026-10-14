@@ -50,7 +50,7 @@ pub struct EulumdatDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LampSetDto {
-    pub lamp_count: u32,
+    pub lamp_count: i32,
     pub lamp_type: String,
     pub total_luminous_flux: f64,
     pub color_temperature: String,
@@ -389,7 +389,7 @@ fn field_key_for(warning: &ValidationWarning) -> Option<&'static str> {
         "Tilt of luminaire during measurement" => "tilt",
         "Number of lamps" => "lampCount",
         "Type of lamps" => "lampType",
-        "Total luminous flux of lamps" => "totalLuminousFlux",
+        "Total luminous flux of lamps" | "Luminous flux of luminaire" => "totalLuminousFlux",
         "Color temperature of lamps" => "colorTemperature",
         "Color rendering index" => "colorRenderingIndex",
         "Wattage including ballast" => "wattageIncludingBallast",
@@ -401,6 +401,40 @@ fn field_key_for(warning: &ValidationWarning) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn absolute_marker_survives_json_dto_edits_and_model_roundtrip() {
+        let mut model = Eulumdat {
+            lamps: vec![LampSet {
+                lamp_count: -3,
+                lamp_type: "Synthetic LED".into(),
+                total_luminous_flux: 2500.0,
+                color_temperature: "4000K".into(),
+                color_rendering_index: "80".into(),
+                wattage_including_ballast: 20.0,
+            }],
+            ..Eulumdat::default()
+        };
+        model
+            .replace_distribution(Distribution {
+                symmetry: Symmetry::Rotational,
+                c_plane_step: 0.0,
+                gamma_step: 90.0,
+                c_planes: vec![0.0],
+                gamma_angles: vec![0.0, 90.0, 180.0],
+                intensities: vec![vec![100.0, 50.0, 0.0]],
+            })
+            .unwrap();
+        let json = serde_json::to_value(EulumdatDto::from(&model)).unwrap();
+        assert_eq!(json["lamps"][0]["lampCount"], -3);
+        let mut dto: EulumdatDto = serde_json::from_value(json).unwrap();
+        dto.luminaire_name = "Edited absolute luminaire".into();
+        let edited = dto.to_model().unwrap();
+        assert_eq!(edited.lamps, model.lamps);
+        assert_eq!(edited.intensities, model.intensities);
+        assert!(edited.is_absolute_photometry());
+        assert_eq!(edited.luminaire_name, "Edited absolute luminaire");
+    }
 
     fn warning(field: &str, lamp_index: Option<usize>) -> ValidationWarning {
         ValidationWarning {
@@ -423,6 +457,10 @@ mod tests {
         assert_eq!(
             field_key_for(&warning("Number of lamps", Some(2))),
             Some("lampCount")
+        );
+        assert_eq!(
+            field_key_for(&warning("Luminous flux of luminaire", Some(0))),
+            Some("totalLuminousFlux")
         );
     }
 
