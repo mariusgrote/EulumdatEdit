@@ -1,6 +1,7 @@
 // TypeScript mirror of the Rust DTOs in src-tauri/src/dto.rs.
 
 export interface LampSet {
+  /** Negative emitter count marks absolute photometry. */
   lampCount: number;
   lampType: string;
   totalLuminousFlux: number;

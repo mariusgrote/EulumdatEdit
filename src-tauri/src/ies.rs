@@ -272,7 +272,7 @@ pub fn parse(text: &str, file_name: &str) -> Result<Eulumdat, String> {
         light_output_ratio: 100.0,
         conversion_factor: 1.0,
         lamps: vec![LampSet {
-            lamp_count: lamp_count as u32,
+            lamp_count: lamp_count as i32,
             lamp_type: "IES lamp".into(),
             total_luminous_flux: lamp_flux,
             color_temperature: String::new(),
